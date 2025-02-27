@@ -45,25 +45,27 @@
             margin: 10px;
             border: 1px solid #ccc;
             border-radius: 5px;
+            width: 150px;
         }
-        .search-btn {
+        .trade-btn {
             padding: 10px 15px;
-            background-color: #28a745;
-            color: white;
             border: none;
             border-radius: 5px;
             cursor: pointer;
+            color: white;
+            margin: 5px;
         }
-        .search-btn:hover {
-            background-color: #218838;
-        }
-        .stock-info {
+        .buy-btn { background-color: #28a745; }
+        .buy-btn:hover { background-color: #218838; }
+        .sell-btn { background-color: #dc3545; }
+        .sell-btn:hover { background-color: #c82333; }
+        .stock-info, .buy-sell-container {
             margin-top: 20px;
             display: none;
         }
-        .buy-sell-container {
-            margin-top: 15px;
-            display: none;
+        .error-message {
+            color: red;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -72,27 +74,154 @@
         <a href="trade.html">Trade</a>
         <a href="portfolio.html">Portfolio</a>
         <a href="leaderboard.html">Leaderboard</a>
-        <a href="profile.html">Profile</a>
         <a href="login.html">Logout</a>
     </div>
+    
     <div class="trade-container">
         <h2>Trade Stocks</h2>
-        <p class="balance">Balance: $0.00</p>
-        <input type="text" id="stock-symbol" placeholder="Enter stock symbol" required>
-        <button class="search-btn" onclick="searchStock()">Search</button>
+        <p class="balance">Balance: $<span id="balance">1000.00</span></p>
+        <input type="text" id="stock-symbol" placeholder="Enter stock symbol (e.g., AMZN)" required>
+        <button class="trade-btn buy-btn" onclick="searchStock()">Search</button>
+        <p class="error-message" id="error-message"></p>
+        
         <div class="stock-info" id="stock-info">
+            <p>Symbol: <span id="stock-symbol-display">N/A</span></p>
             <p>Current Price: <span id="stock-price">N/A</span></p>
+            <p>Shares Owned: <span id="stock-holdings">0</span></p>
         </div>
+
         <div class="buy-sell-container" id="buy-sell-container">
             <input type="number" id="buy-amount" placeholder="Enter amount to buy" min="1">
+            <button class="trade-btn buy-btn" onclick="buyStock()">Buy</button>
             <input type="number" id="sell-amount" placeholder="Enter amount to sell" min="1">
+            <button class="trade-btn sell-btn" onclick="sellStock()">Sell</button>
         </div>
     </div>
 
     <script>
-        function searchStock() {
-            document.getElementById('stock-info').style.display = 'block';
-            document.getElementById('buy-sell-container').style.display = 'block';
+        const API_KEY = "cuigmfpr01qtqfmiku40cuigmfpr01qtqfmiku4g"; 
+        const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
+
+        let balance = 1000.00;
+        let currentStockSymbol = "";
+        let currentStockPrice = 0;
+        let holdings = {}; // Stores user-owned stocks
+        let priceUpdateInterval = null;
+
+        async function searchStock() {
+            let input = document.getElementById("stock-symbol").value.trim().toUpperCase();
+            const stockInfo = document.getElementById("stock-info");
+            const stockPrice = document.getElementById("stock-price");
+            const stockSymbolDisplay = document.getElementById("stock-symbol-display");
+            const stockHoldings = document.getElementById("stock-holdings");
+            const errorMessage = document.getElementById("error-message");
+            const buySellContainer = document.getElementById("buy-sell-container");
+
+            if (!input) {
+                errorMessage.textContent = "Please enter a stock symbol.";
+                stockInfo.style.display = "none";
+                buySellContainer.style.display = "none";
+                return;
+            }
+
+            errorMessage.textContent = "";
+
+            try {
+                const response = await fetch(`${STOCK_API_URL}${input}&token=${API_KEY}`);
+                const stockData = await response.json();
+
+                if (stockData.c) {
+                    currentStockSymbol = input;
+                    currentStockPrice = stockData.c;
+
+                    stockSymbolDisplay.textContent = currentStockSymbol;
+                    stockPrice.textContent = `$${currentStockPrice.toFixed(2)}`;
+                    stockHoldings.textContent = holdings[currentStockSymbol] || 0;
+                    stockInfo.style.display = "block";
+                    buySellContainer.style.display = "block";
+
+                    startPriceUpdates();
+                } else {
+                    errorMessage.textContent = "Invalid stock symbol or data unavailable.";
+                    stockInfo.style.display = "none";
+                    buySellContainer.style.display = "none";
+                }
+            } catch (error) {
+                errorMessage.textContent = "Failed to fetch stock data. Please try again later.";
+                console.error("Error fetching stock data:", error);
+            }
+        }
+
+        function buyStock() {
+            const buyAmount = parseInt(document.getElementById("buy-amount").value);
+
+            if (!buyAmount || buyAmount < 1) {
+                alert("Please enter a valid amount to buy.");
+                return;
+            }
+
+            const cost = buyAmount * currentStockPrice;
+            if (cost > balance) {
+                alert("Insufficient funds!");
+                return;
+            }
+
+            balance -= cost;
+            holdings[currentStockSymbol] = (holdings[currentStockSymbol] || 0) + buyAmount;
+            updateUI();
+            alert(`Bought ${buyAmount} shares of ${currentStockSymbol} for $${cost.toFixed(2)}.`);
+
+            document.getElementById("buy-amount").value = "";
+            document.getElementById("stock-symbol").value = "";
+        }
+
+        function sellStock() {
+            const sellAmount = parseInt(document.getElementById("sell-amount").value);
+
+            if (!sellAmount || sellAmount < 1) {
+                alert("Please enter a valid amount to sell.");
+                return;
+            }
+
+            if (!holdings[currentStockSymbol] || holdings[currentStockSymbol] < sellAmount) {
+                alert("You don't have enough shares to sell!");
+                return;
+            }
+
+            const revenue = sellAmount * currentStockPrice;
+            balance += revenue;
+            holdings[currentStockSymbol] -= sellAmount;
+
+            if (holdings[currentStockSymbol] === 0) delete holdings[currentStockSymbol];
+
+            updateUI();
+            alert(`Sold ${sellAmount} shares of ${currentStockSymbol} for $${revenue.toFixed(2)}.`);
+
+            document.getElementById("sell-amount").value = "";
+            document.getElementById("stock-symbol").value = "";
+        }
+
+        function updateUI() {
+            document.getElementById("balance").textContent = balance.toFixed(2);
+            document.getElementById("stock-holdings").textContent = holdings[currentStockSymbol] || 0;
+        }
+
+        function startPriceUpdates() {
+            if (priceUpdateInterval) clearInterval(priceUpdateInterval);
+
+            priceUpdateInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${STOCK_API_URL}${currentStockSymbol}&token=${API_KEY}`);
+                    const stockData = await response.json();
+
+                    if (stockData.c) {
+                        currentStockPrice = stockData.c;
+                        document.getElementById("stock-price").textContent = `$${currentStockPrice.toFixed(2)}`;
+                    }
+                } catch (error) {
+                    console.error("Error updating stock price:", error);
+                }
+            }, 5000);
         }
     </script>
 </body>

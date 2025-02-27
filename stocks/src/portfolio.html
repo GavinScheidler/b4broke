@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            text-align: center;
+        }
+        .navbar {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background-color: #007bff;
+            padding: 15px;
+            color: white;
+        }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 10px 15px;
+        }
+        .navbar a:hover {
+            background-color: #0056b3;
+            border-radius: 5px;
+        }
+        .container {
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            display: inline-block;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group span {
+            font-weight: bold;
+        }
+        input {
+            padding: 10px;
+            margin: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: 200px;
+        }
+        .button-group {
+            margin-top: 20px;
+        }
+        .button-group button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            color: white;
+            margin: 5px;
+        }
+        .update-button {
+            background-color: #28a745; /* Green */
+        }
+        .confirm-button {
+            background-color: #007bff; /* Blue */
+        }
+        .cancel-button {
+            background-color: #dc3545; /* Red */
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <a href="trade.html">Trade</a>
+        <a href="portfolio.html">Portfolio</a>
+        <a href="leaderboard.html">Leaderboard</a>
+        <a href="login.html">Log out</a>
+    </div>
+
+    <div class="container">
+        <h2>User Information</h2>
+        <div id="userInfo">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <span id="displayUsername">JohnDoe</span>
+            </div>
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <span id="displayEmail">johndoe@example.com</span>
+            </div>
+            <button class="update-button" onclick="toggleEdit()">Update Information</button>
+        </div>
+
+        <div id="editInfo" class="hidden">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" value="JohnDoe">
+            </div>
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" value="johndoe@example.com">
+            </div>
+            <div class="form-group">
+                <label for="password">Change Password:</label>
+                <input type="password" id="password">
+            </div>
+            <div class="form-group">
+                <label for="confirmPassword">Confirm Password:</label>
+                <input type="password" id="confirmPassword">
+            </div>
+            <div class="button-group">
+                <button class="confirm-button" onclick="confirmChanges()">Confirm Changes</button>
+                <button class="cancel-button" onclick="toggleEdit()">Cancel Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleEdit() {
+            const userInfo = document.getElementById("userInfo");
+            const editInfo = document.getElementById("editInfo");
+            userInfo.classList.toggle("hidden");
+            editInfo.classList.toggle("hidden");
+        }
+
+        function confirmChanges() {
+            const username = document.getElementById("username").value;
+            const email = document.getElementById("email").value;
+            const password = document.getElementById("password").value;
+            const confirmPassword = document.getElementById("confirmPassword").value;
+
+            if (password !== confirmPassword) {
+                alert("Passwords do not match.");
+                return;
+            }
+
+            // Update displayed information
+            document.getElementById("displayUsername").textContent = username;
+            document.getElementById("displayEmail").textContent = email;
+
+            // Reset input fields
+            document.getElementById("username").value = username;
+            document.getElementById("email").value = email;
+            document.getElementById("password").value = "";
+            document.getElementById("confirmPassword").value = "";
+
+            toggleEdit();
+        }
+    </script>
+
+</body>
+</html>
