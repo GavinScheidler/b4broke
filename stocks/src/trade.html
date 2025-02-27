@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            text-align: center;
+        }
+        .navbar {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background-color: #007bff;
+            padding: 15px;
+            color: white;
+        }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 10px 15px;
+        }
+        .navbar a:hover {
+            background-color: #0056b3;
+            border-radius: 5px;
+        }
+        .balance {
+            font-weight: bold;
+        }
+        .trade-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            display: inline-block;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input {
+            padding: 10px;
+            margin: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .search-btn {
+            padding: 10px 15px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .search-btn:hover {
+            background-color: #218838;
+        }
+        .stock-info {
+            margin-top: 20px;
+            display: none;
+        }
+        .buy-sell-container {
+            margin-top: 15px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="trade.html">Trade</a>
+        <a href="portfolio.html">Portfolio</a>
+        <a href="leaderboard.html">Leaderboard</a>
+        <a href="profile.html">Profile</a>
+        <a href="login.html">Logout</a>
+    </div>
+    <div class="trade-container">
+        <h2>Trade Stocks</h2>
+        <p class="balance">Balance: $0.00</p>
+        <input type="text" id="stock-symbol" placeholder="Enter stock symbol" required>
+        <button class="search-btn" onclick="searchStock()">Search</button>
+        <div class="stock-info" id="stock-info">
+            <p>Current Price: <span id="stock-price">N/A</span></p>
+        </div>
+        <div class="buy-sell-container" id="buy-sell-container">
+            <input type="number" id="buy-amount" placeholder="Enter amount to buy" min="1">
+            <input type="number" id="sell-amount" placeholder="Enter amount to sell" min="1">
+        </div>
+    </div>
+
+    <script>
+        function searchStock() {
+            document.getElementById('stock-info').style.display = 'block';
+            document.getElementById('buy-sell-container').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
