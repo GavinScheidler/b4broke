@@ -37,8 +37,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const links = document.createElement("div");
     links.classList.add("links");
     links.innerHTML = `
-        <a href="forgotPassword.html">Forgot Password?</a>
-        <a href="createAccount.html">Create an Account</a>
+        <a href="#" id="forgotPasswordLink">Forgot Password?</a>
+        <a href="#" id="createAccountLink">Create an Account</a>
     `;
     loginContainer.appendChild(links);
     
@@ -102,9 +102,23 @@ document.addEventListener("DOMContentLoaded", function () {
             text-decoration: none;
             display: block;
             margin-top: 5px;
+            cursor: pointer;
         }
     `;
     document.head.appendChild(style);
+
+    // Event listeners for navigation
+    document.getElementById("forgotPasswordLink").addEventListener("click", function () {
+        import("./forgotPassword.js").then(module => {
+            module.loadForgotPassword();
+        });
+    });
+
+    document.getElementById("createAccountLink").addEventListener("click", function () {
+        import("./createAccount.js").then(module => {
+            module.loadCreateAccount();
+        });
+    });
 });
 
 // Login function
