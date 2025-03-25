@@ -1,0 +1,57 @@
+const TradePage = () => {
+  const API_KEY = "cuigmfpr01qtqfmiku40cuigmfpr01qtqfmiku4g";
+  const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
+
+  const [stockSymbol, setStockSymbol] = useState("");
+  const [stockPrice, setStockPrice] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [stockHoldings, setStockHoldings] = useState(0);
+  
+  const searchStock = async () => {
+    if (!stockSymbol.trim()) {
+      setErrorMessage("Please enter a stock symbol.");
+      setStockPrice(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${STOCK_API_URL}${stockSymbol.toUpperCase()}&token=${API_KEY}`);
+      const data = await response.json();
+
+      if (data.c) {
+        setStockPrice(data.c);
+        setStockHoldings(10); // Placeholder, update based on user data
+        setErrorMessage("");
+      } else {
+        setErrorMessage("Invalid stock symbol or data unavailable.");
+        setStockPrice(null);
+      }
+    } catch (error) {
+      setErrorMessage("Error fetching stock data. Try again later.");
+      console.error("Stock fetch error:", error);
+    }
+  };
+
+  return (
+    <div className="container">
+      <h2>Trade Stocks</h2>
+      <input
+        type="text"
+        placeholder="Enter stock symbol (e.g., AMZN)"
+        value={stockSymbol}
+        onChange={(e) => setStockSymbol(e.target.value)}
+      />
+      <button className="trade-btn" onClick={searchStock}>Search</button>
+
+      {errorMessage && <p className="error-message">{errorMessage}</p>}
+
+      {stockPrice !== null && (
+        <div className="stock-info">
+          <p>Symbol: {stockSymbol.toUpperCase()}</p>
+          <p>Current Price: ${stockPrice.toFixed(2)}</p>
+          <p>Shares Owned: {stockHoldings}</p>
+        </div>
+      )}
+    </div>
+  );
+};

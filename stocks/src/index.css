@@ -1,0 +1,119 @@
+body {
+  font-family: Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #f4f4f4;
+  margin: 0;
+}
+
+.containerL {
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  width: 300px;
+  position: relative;
+}
+
+.container {
+  margin: 20px auto;
+  padding: 20px;
+  background: white;
+  display: inline-block;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+button {
+  background-color: #007bff;
+  color: white;
+  padding: 10px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  width: 100%;
+  font-size: 16px;
+  margin-top: 10px;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+nav {
+  display: flex;
+  justify-content: space-around;
+  background-color: #007bff;
+  padding: 15px;
+  color: white;
+}
+
+nav a {
+  color: white;
+  text-decoration: none;
+  padding: 10px 15px;
+}
+
+nav a:hover {
+  background-color: #0056b3;
+  border-radius: 5px;
+}
+
+.back-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: none;
+  border: none;
+  color: #007bff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.forgot-btn {
+  background-color: #dc3545;
+}
+
+.forgot-btn:hover {
+  background-color: #c82333;
+}
+
+.account-btn {
+  background-color: #28a745;
+}
+
+.account-btn:hover {
+  background-color: #218838;
+}
+
+.trade-btn {
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  color: white;
+  margin: 5px;
+}
+
+.buy-btn { background-color: #28a745; }
+.buy-btn:hover { background-color: #218838; }
+
+.sell-btn { background-color: #dc3545; }
+.sell-btn:hover { background-color: #c82333; }
+
+.error-message {
+  color: red;
+  margin-top: 10px;
+}
