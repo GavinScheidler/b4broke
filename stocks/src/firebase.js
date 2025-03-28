@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth"; // Include createUserWithEmailAndPassword
-import { getFirestore, collection, query, where, getDocs, addDoc, doc, setDoc } from "firebase/firestore"; // Include all Firestore functions
+import { getFirestore, collection, query, where, getDocs,getDoc, addDoc, doc, setDoc, updateDoc,limit,orderBy} from "firebase/firestore"; // Include all Firestore functions
 import { getAnalytics } from "firebase/analytics";  // Optional, if you're using Analytics
 
 // Your Firebase config
@@ -25,4 +25,4 @@ const db = getFirestore(app);
 const analytics = getAnalytics(app);  // Optional
 
 // Export Firebase services and functions
-export { auth, db, analytics, createUserWithEmailAndPassword, collection, query, where, getDocs, addDoc, doc, setDoc };
+export { auth, db, analytics, createUserWithEmailAndPassword, getDoc,collection, query, where, getDocs, addDoc, doc, setDoc,updateDoc,limit,orderBy};
