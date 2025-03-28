@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { BrowserRouter as Router, Route, Routes, Link, useNavigate } from "react-router-dom";
-
+import { auth, db, analytics, createUserWithEmailAndPassword, collection, query, where, getDocs, addDoc, doc, setDoc } from './firebase';  // Import all necessary Firebase services and functions
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -19,20 +19,106 @@ const LoginPage = () => {
   );
 }
 
+
 const CreateAccountPage = () => {
   const navigate = useNavigate();
+  
+  // State variables to hold form data
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState(''); // For displaying any errors
+
+  const handleSignUp = async (e) => {
+    e.preventDefault(); // Prevent page refresh
+    setError(''); // Clear any old error
+  
+    if (!email || !username || !password || !confirmPassword) {
+      setError('Please fill in all fields.');
+      return;
+    }
+  
+    if (password !== confirmPassword) {
+      setError("Passwords don't match!");
+      return;
+    }
+
+    try {
+      // Step 1: Check if username is already taken
+      const usersRef = collection(db, "Users");
+      const q = query(usersRef, where("username", "==", username));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        setError("Username already exists! Choose a different one.");
+        return;
+      }
+
+      // Step 2: Create user with Firebase Auth (Handles passwords securely)
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userId = userCredential.user.uid; // Get Firebase Auth UID
+
+      // Step 3: Store additional user details in Firestore
+      await addDoc(collection(db, "Users"), {
+        email,
+        username,
+        password, // ⚠️ Store hashed passwords instead
+        balance: 0,
+        stocksInvested: [],
+      });
+
+      alert("Account created!");
+      navigate("/"); // Redirect to login page
+    } catch (err) {
+      console.error("Error creating account: ", err); // Log detailed error
+      setError("Failed to create account. Try again.");
+    }
+  };
+
   return (
     <div className="container">
-      <button onClick={() => navigate("/login")}>Back</button>
+      <button onClick={() => navigate('/login')}>Back</button>
       <h2>Create Account</h2>
-      <input type="email" placeholder="Email" required />
-      <input type="text" placeholder="Username" required />
-      <input type="password" placeholder="Password" required />
-      <input type="password" placeholder="Confirm Password" required />
-      <button>Sign Up</button>
+  
+      {error && <p style={{ color: 'red', fontWeight: 'bold' }}>{error}</p>} {/* Display error message */}
+
+      <form onSubmit={handleSignUp}>
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          placeholder="Confirm Password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+        />
+        <button type="submit">Sign Up</button>
+      </form>
     </div>
   );
-}
+};
+
+
 
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
@@ -257,6 +343,9 @@ const Portfolio = () => {
 }
 
 function App() {
+  console.log('Firebase Initialized:', auth);
+  console.log('Firestore Initialized:', db);
+  console.log('Analytics Initialized:', analytics);
   return (
     <Router>
       <Routes>
