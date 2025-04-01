@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Route, Routes, Link, useNavigate, useLocation} from "react-router-dom";
-import { auth, db, analytics, createUserWithEmailAndPassword, collection, query, where, getDocs,getDoc, addDoc, doc, setDoc,updateDoc,limit,orderBy } from './firebase';  // Import all necessary Firebase services and functions
+import { auth, db, analytics, createUserWithEmailAndPassword, collection, query, where, getDocs,getDoc, addDoc, doc, setDoc,updateDoc,limit,orderBy, getFirestore, getAuth, sendPasswordResetEmail, useFireBaseApp } from './firebase';  // Import all necessary Firebase services and functions
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
@@ -372,13 +372,59 @@ const CreateAccountPage = () => {
 
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  
+  const app = useFirebaseApp();
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError("Please enter an email.");
+      return;
+    }
+
+    try {
+      // Check if email exists in Firestore database (users collection)
+      const usersCollection = collection(db, "users");
+      const q = query(usersCollection, where("email", "==", email));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        setError("This email is not registered.");
+        return;
+      }
+
+      // Send password reset email using Firebase Authentication
+      await sendPasswordResetEmail(auth, email);
+      setMessage("Password reset email sent. Please check your inbox.");
+      setError(""); // Clear any previous errors
+    } catch (err) {
+      setError("An error occurred. Please try again.");
+      setMessage(""); // Clear any success messages
+    }
+  };
+
   return (
     <div className="container">
       <button onClick={() => navigate("/login")}>Back</button>
       <h2>Forgot Password</h2>
       <p>Enter your email to reset your password.</p>
-      <input type="email" placeholder="Email" required />
-      <button>Reset Password</button>
+      
+      <input
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+      />
+      
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      {message && <p style={{ color: "green" }}>{message}</p>}
+      
+      <button onClick={handleResetPassword}>Reset Password</button>
     </div>
   );
 }
