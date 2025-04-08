@@ -79,6 +79,8 @@ const LoginPage = () => {
       
       <div className="links">
         <Link to="/forgot-password">Forgot Password?</Link>
+      </div>
+      <div className="links">
         <Link to="/create-account">Create an Account</Link>
       </div>
     </div>
@@ -469,7 +471,7 @@ const Leaderboard = () => {
     const fetchLeaderboard = async () => {
       try {
         const userRef = collection(db, "Users");
-        const q = query(userRef, orderBy("balance", "desc"), limit(10));
+        const q = query(userRef, where("displayable", "==", true), orderBy("balance", "desc"), limit(10));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
@@ -608,6 +610,30 @@ const Portfolio = () => {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
           />
+          <h3>Display on Leaderboard</h3>
+          <label>
+            <input
+              type="checkbox"
+              checked={userData.displayable}
+              onChange={async (e) => {
+                const newValue = e.target.checked;
+                try {
+                  const userDocRef = doc(db, "users", userData.uid);
+                  await updateDoc(userDocRef, {
+                    displayable: newValue,
+                  });
+                  setUserData((prev) => ({
+                    ...prev,
+                    displayable: newValue,
+                  }));
+                } catch (error) {
+                  console.error("Error updating displayable:", error);
+                  setErrorMessage("Failed to update leaderboard visibility.");
+                }
+              }}
+            />
+            Display my username on leaderboard
+          </label>
           <button onClick={updatePassword}>Update Password</button>
           <h3>Account Balance</h3>
           <p>${userData.balance.toFixed(2)}</p>
