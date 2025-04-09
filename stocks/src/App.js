@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Route, Routes, Link, useNavigate, useLocation} from "react-router-dom";
-import { auth, db, analytics, createUserWithEmailAndPassword, collection, query, where, getDocs,getDoc, addDoc, doc, setDoc,updateDoc,limit,orderBy, getFirestore, getAuth, sendPasswordResetEmail, useFireBaseApp } from './firebase';  // Import all necessary Firebase services and functions
+import { auth, db, analytics, createUserWithEmailAndPassword, collection, query, where, getDocs,getDoc, addDoc, doc, setDoc,updateDoc,limit,orderBy, getFirestore, sendPasswordResetEmail, getAuth,useFireBaseApp } from './firebase';  // Import all necessary Firebase services and functions
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
@@ -378,10 +378,6 @@ const ForgotPasswordPage = () => {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   
-  const app = useFirebaseApp();
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-
   const handleResetPassword = async () => {
     if (!email) {
       setError("Please enter an email.");
