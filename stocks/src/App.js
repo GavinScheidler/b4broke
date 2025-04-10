@@ -91,6 +91,9 @@ const TradePage = () => {
   const API_KEY = "cuigmfpr01qtqfmiku40cuigmfpr01qtqfmiku4g";
   const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
 
+  const [companyName, setCompanyName] = useState("");
+  const [stockQuantity, setStockQuantity] = useState(1);
+  const [fetchedStockSymbol, setFetchedStockSymbol] = useState("");
   const [stockSymbol, setStockSymbol] = useState("");
   const [stockPrice, setStockPrice] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -131,26 +134,51 @@ const TradePage = () => {
 
   const searchStock = async () => {
     if (!stockSymbol.trim()) {
-      setErrorMessage("Please enter a stock symbol.");
+      setErrorMessage("Please enter a stock symbol or company name.");
       setStockPrice(null);
       return;
     }
-
+  
     try {
-      const response = await fetch(`${STOCK_API_URL}${stockSymbol.toUpperCase()}&token=${API_KEY}`);
-      const data = await response.json();
-
-      if (data.c) {
-        setStockPrice(data.c);
-        const stockIndex = userData?.stocksInvested?.findIndex(stock => stock.symbol === stockSymbol.toUpperCase());
+      // Step 1: Try to find the symbol using the Finnhub search endpoint
+      const searchResponse = await fetch(
+        `https://finnhub.io/api/v1/search?q=${stockSymbol}&token=${API_KEY}`
+      );
+      const searchData = await searchResponse.json();
+  
+      if (!searchData.count || !searchData.result || searchData.result.length === 0) {
+        setErrorMessage("No matching stock found.");
+        setStockPrice(null);
+        return;
+      }
+  
+      const bestMatch = searchData.result[0];
+      const symbol = bestMatch.symbol;
+      const name = bestMatch.description;
+  
+      // Step 2: Get the quote using the matched symbol
+      const quoteResponse = await fetch(
+        `${STOCK_API_URL}${symbol}&token=${API_KEY}`
+      );
+      const quoteData = await quoteResponse.json();
+  
+      if (quoteData.c) {
+        setFetchedStockSymbol(symbol);
+        setStockPrice(quoteData.c);
+        setCompanyName(name);
+  
+        const stockIndex = userData?.stocksInvested?.findIndex(
+          (stock) => stock.symbol === symbol
+        );
         if (stockIndex !== -1) {
-          setStockHoldings(userData.stocksInvested[stockIndex].shares); // Update stock holdings based on user data
+          setStockHoldings(userData.stocksInvested[stockIndex].shares);
         } else {
-          setStockHoldings(0); // User doesn't own the stock yet
+          setStockHoldings(0);
         }
+  
         setErrorMessage("");
       } else {
-        setErrorMessage("Invalid stock symbol or data unavailable.");
+        setErrorMessage("Price data unavailable.");
         setStockPrice(null);
       }
     } catch (error) {
@@ -158,30 +186,37 @@ const TradePage = () => {
       console.error("Stock fetch error:", error);
     }
   };
+  
 
   const buyStock = async () => {
-    if (!userData || !stockPrice) {
+    const quantity = parseInt(stockQuantity);
+    if (!userData || !stockPrice || !fetchedStockSymbol) {
       setErrorMessage("Error: No user data or stock price available.");
+      return;
+    }
+
+    if(isNaN(quantity) || quantity<=0){
+      setErrorMessage("Please enter a valid quantity greater than 0.");
+      return;
+    }
+    const totalCost = stockPrice * quantity;
+    if(userData.balance<totalCost){
+      setErrorMessage("Insufficient balance to purchase this quantity.");
       return;
     }
 
     const stockIndex = userData?.stocksInvested?.findIndex(stock => stock.symbol === stockSymbol.toUpperCase());
 
-    if (userData.balance < stockPrice) {
-      setErrorMessage("Insufficient balance to purchase this stock.");
-      return;
-    }
-
     // Update balance and stocksInvested
-    const newBalance = userData.balance - stockPrice;
+    const newBalance = userData.balance - totalCost;
     if (stockIndex !== -1) {
       // User already owns the stock, so we increase the shares
-      userData.stocksInvested[stockIndex].shares += 1;
+      userData.stocksInvested[stockIndex].shares += quantity;
     } else {
       // Add a new stock object to the portfolio
       userData.stocksInvested.push({
-        symbol: stockSymbol.toUpperCase(),
-        shares: 1,
+        symbol: fetchedStockSymbol,
+        shares: quantity,
       });
     }
 
@@ -194,7 +229,7 @@ const TradePage = () => {
 
       setErrorMessage("");
       alert("Stock purchased successfully!");
-      setStockHoldings(prevHoldings => prevHoldings + 1); // Update stock holdings displayed on the UI
+      setStockHoldings(prevHoldings => prevHoldings + quantity); // Update stock holdings displayed on the UI
     } catch (err) {
       setErrorMessage("Error purchasing stock. Please try again.");
       console.error("Error buying stock:", err);
@@ -202,20 +237,27 @@ const TradePage = () => {
   };
 
   const sellStock = async () => {
-    if (!userData || !stockPrice) {
+    const quantity = parseInt(stockQuantity);
+
+    if (!userData || !stockPrice || !fetchedStockSymbol) {
       setErrorMessage("Error: No user data or stock price available.");
       return;
     }
 
+    if(isNaN(quantity) || quantity<=0){
+      setErrorMessage("Please enter a valid quantity greater than 0.");
+      return;
+    }
+
     const stockIndex = userData?.stocksInvested?.findIndex(stock => stock.symbol === stockSymbol.toUpperCase());
-    if (stockIndex === -1 || userData.stocksInvested[stockIndex]?.shares <= 0) {
+    if (stockIndex === -1 || userData.stocksInvested[stockIndex]?.shares <= quantity) {
       setErrorMessage("You do not own this stock.");
       return;
     }
 
     // Update balance and stocksInvested
-    const newBalance = userData.balance + stockPrice;
-    userData.stocksInvested[stockIndex].shares -= 1;
+    const newBalance = userData.balance + stockPrice * quantity;
+    userData.stocksInvested[stockIndex].shares -= quantity;
 
     // If the user has no more shares of the stock, remove it from portfolio
     if (userData.stocksInvested[stockIndex].shares === 0) {
@@ -231,7 +273,7 @@ const TradePage = () => {
 
       setErrorMessage("");
       alert("Stock sold successfully!");
-      setStockHoldings(prevHoldings => prevHoldings - 1); // Update stock holdings displayed on the UI
+      setStockHoldings(prevHoldings => prevHoldings - quantity); // Update stock holdings displayed on the UI
     } catch (err) {
       setErrorMessage("Error selling stock. Please try again.");
       console.error("Error selling stock:", err);
@@ -250,7 +292,7 @@ const TradePage = () => {
       <h2>Trade Stocks</h2>
       <input
         type="text"
-        placeholder="Enter stock symbol (e.g., AMZN)"
+        placeholder="Enter stock symbol or company name (e.g., AMZN or Amazon)"
         value={stockSymbol}
         onChange={(e) => setStockSymbol(e.target.value)}
       />
@@ -260,9 +302,10 @@ const TradePage = () => {
 
       {stockPrice !== null && (
         <div className="stock-info">
-          <p>Symbol: {stockSymbol.toUpperCase()}</p>
+          <p>Symbol: {fetchedStockSymbol} {companyName && `- ${companyName}`}</p>
           <p>Current Price: ${stockPrice.toFixed(2)}</p>
           <p>Shares Owned: {stockHoldings}</p>
+          <input type="number" min="1" value={stockQuantity} onChange={(e)=> setStockQuantity(e.target.value)} placeholder="Enter Quantity"/>
           <button onClick={buyStock}>Buy</button>
           <button onClick={sellStock} disabled={stockHoldings === 0}>Sell</button>
         </div>
