@@ -1,63 +1,102 @@
 import { useState, useEffect } from "react";
-import { BrowserRouter as Router, Route, Routes, Link, useNavigate, useLocation} from "react-router-dom";
-import { auth, db, analytics, createUserWithEmailAndPassword, collection, query, where, getDocs,getDoc, addDoc, doc, setDoc,updateDoc,limit,orderBy, getFirestore, sendPasswordResetEmail, getAuth,useFireBaseApp } from './firebase';  // Import all necessary Firebase services and functions
+import { BrowserRouter as Router, Route, Routes, Link, useNavigate, useLocation } from "react-router-dom";
+import { 
+  auth, 
+  db, 
+  createUserWithEmailAndPassword, 
+  collection, 
+  query, 
+  where, 
+  getDocs,
+  addDoc, 
+  doc, 
+  updateDoc,
+  limit,
+  orderBy, 
+  sendPasswordResetEmail,
+  signOut
+} from './firebase';
 
+// Main App Component
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/create-account" element={<CreateAccountPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/trade" element={<TradePage />} />
+        <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/portfolio" element={<Portfolio />} />
+        <Route path="/" element={<LoginPage />} />
+      </Routes>
+    </Router>
+  );
+}
+
+// Login Page Component
 const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
-    e.preventDefault(); // Prevent form refresh
-    setError(''); // Clear any previous errors
+    e.preventDefault();
+    setError('');
+    setLoading(true);
 
     if (!username || !password) {
       setError('Please fill in both fields.');
+      setLoading(false);
       return;
     }
 
     try {
-      // Step 1: Check if the username exists in Firestore
-      const usersRef = collection(db, 'Users'); // Use the correct collection name "Users"
-      const q = query(usersRef, where('username', '==', username));
+      const usersRef = collection(db, 'Users');
+      const q = query(usersRef, where("usernameLower", "==", username.toLowerCase()));
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
         setError('Username does not exist.');
+        setLoading(false);
         return;
       }
 
-      // Step 2: Check if the entered password matches the stored password
-      const userDoc = querySnapshot.docs[0]; // Get the first document matching the username
+      const userDoc = querySnapshot.docs[0];
       const userData = userDoc.data();
 
-      if (userData.password !== password) {
-        setError('Incorrect password.');
+      // Sign in with Firebase Auth (password is hashed)
+      try {
+        await auth.signInWithEmailAndPassword(userData.email, password);
+      } catch (authError) {
+        setError('Invalid credentials. Please try again.');
+        setLoading(false);
         return;
       }
 
-      // Step 3: Successfully logged in, pass user data to the "trade" page
-      const userDataToPass = {
-        username: userData.username,
-        password: userData.password,
-        email: userData.email,
-        balance: userData.balance,
-        stocksInvested: userData.stocksInvested,
-      };
-
-      // Step 4: Navigate to "trade" page, passing user data via state
-      navigate('/trade', { state: userDataToPass });
+      navigate('/trade', { 
+        state: { 
+          username: userData.username,
+          email: userData.email,
+          balance: userData.balance,
+          stocksInvested: userData.stocksInvested || [],
+          userId: userDoc.id
+        } 
+      });
     } catch (err) {
       setError('An error occurred. Please try again.');
-      console.error(err);
+      console.error("Login error:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="containerL">
       <h2>Login</h2>
-      {error && <p style={{ color: 'red', fontWeight: 'bold' }}>{error}</p>} {/* Show error message */}
+      {error && <p className="error">{error}</p>}
       
       <form onSubmit={handleLogin}>
         <input
@@ -74,23 +113,24 @@ const LoginPage = () => {
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        <button type="submit">Login</button>
+        <button type="submit" disabled={loading}>
+          {loading ? "Loading..." : "Login"}
+        </button>
       </form>
       
       <div className="links">
         <Link to="/forgot-password">Forgot Password?</Link>
-      </div>
-      <div className="links">
         <Link to="/create-account">Create an Account</Link>
       </div>
     </div>
   );
-}
+};
 
+// Trade Page Component
 const TradePage = () => {
-  const API_KEY = "cuigmfpr01qtqfmiku40cuigmfpr01qtqfmiku4g";
+  const API_KEY = process.env.REACT_APP_FINNHUB_KEY;
   const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
-
+  
   const [companyName, setCompanyName] = useState("");
   const [stockQuantity, setStockQuantity] = useState(1);
   const [fetchedStockSymbol, setFetchedStockSymbol] = useState("");
@@ -98,287 +138,332 @@ const TradePage = () => {
   const [stockPrice, setStockPrice] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [stockHoldings, setStockHoldings] = useState(0);
-  const [userData, setUserData] = useState(null); // Holds user data
+  const [userData, setUserData] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { username, password } = location.state || {}; // Get user data from location state
-  
+
   useEffect(() => {
-    if (!username || !password) {
-      setErrorMessage("Error: No user data passed.");
-      return; // Exit early if there's no username or password
+    if (!location.state?.username) {
+      navigate("/login");
+      return;
     }
-
-    // Fetch user data from Firestore if username is valid
-    const getUserData = async () => {
-      try {
-        const userRef = collection(db, "Users");
-        const q = query(userRef, where("username", "==", username));
-        const querySnapshot = await getDocs(q);
-
-        if (!querySnapshot.empty) {
-          const userDoc = querySnapshot.docs[0];
-          setUserData({ ...userDoc.data(), id: userDoc.id }); // Store user data and userDoc ID
-        } else {
-          setErrorMessage("User not found.");
-        }
-      } catch (error) {
-        setErrorMessage("Error fetching user data.");
-        console.error("Error fetching user data:", error);
-      }
-    };
-
-    getUserData();
-  }, [username, password]); // Depend on username and password to fetch data when they change
+    setUserData(location.state);
+  }, [location.state, navigate]);
 
   const searchStock = async () => {
     if (!stockSymbol.trim()) {
       setErrorMessage("Please enter a stock symbol or company name.");
-      setStockPrice(null);
       return;
     }
-  
+    
+    setLoading(true);
+    setErrorMessage("");
+
     try {
-      // Step 1: Try to find the symbol using the Finnhub search endpoint
+      // Search for stock symbol
       const searchResponse = await fetch(
         `https://finnhub.io/api/v1/search?q=${stockSymbol}&token=${API_KEY}`
       );
       const searchData = await searchResponse.json();
-  
-      if (!searchData.count || !searchData.result || searchData.result.length === 0) {
+
+      if (!searchData.result?.length) {
         setErrorMessage("No matching stock found.");
-        setStockPrice(null);
         return;
       }
-  
+
       const bestMatch = searchData.result[0];
       const symbol = bestMatch.symbol;
       const name = bestMatch.description;
-  
-      // Step 2: Get the quote using the matched symbol
+
+      // Get stock quote
       const quoteResponse = await fetch(
         `${STOCK_API_URL}${symbol}&token=${API_KEY}`
       );
       const quoteData = await quoteResponse.json();
-  
-      if (quoteData.c) {
-        setFetchedStockSymbol(symbol);
-        setStockPrice(quoteData.c);
-        setCompanyName(name);
-  
-        const stockIndex = userData?.stocksInvested?.findIndex(
-          (stock) => stock.symbol === symbol
-        );
-        if (stockIndex !== -1) {
-          setStockHoldings(userData.stocksInvested[stockIndex].shares);
-        } else {
-          setStockHoldings(0);
-        }
-  
-        setErrorMessage("");
-      } else {
+
+      if (!quoteData.c) {
         setErrorMessage("Price data unavailable.");
-        setStockPrice(null);
+        return;
       }
+
+      setFetchedStockSymbol(symbol);
+      setStockPrice(quoteData.c);
+      setCompanyName(name);
+
+      // Check if user owns this stock
+      const ownedStock = userData?.stocksInvested?.find(
+        stock => stock.symbol === symbol
+      );
+      setStockHoldings(ownedStock?.shares || 0);
     } catch (error) {
       setErrorMessage("Error fetching stock data. Try again later.");
       console.error("Stock fetch error:", error);
+    } finally {
+      setLoading(false);
     }
   };
-  
 
   const buyStock = async () => {
     const quantity = parseInt(stockQuantity);
-    if (!userData || !stockPrice || !fetchedStockSymbol) {
-      setErrorMessage("Error: No user data or stock price available.");
-      return;
-    }
-
-    if(isNaN(quantity) || quantity<=0){
-      setErrorMessage("Please enter a valid quantity greater than 0.");
-      return;
-    }
-    const totalCost = stockPrice * quantity;
-    if(userData.balance<totalCost){
-      setErrorMessage("Insufficient balance to purchase this quantity.");
-      return;
-    }
-
-    const stockIndex = userData?.stocksInvested?.findIndex(stock => stock.symbol === stockSymbol.toUpperCase());
-
-    // Update balance and stocksInvested
-    const newBalance = userData.balance - totalCost;
-    if (stockIndex !== -1) {
-      // User already owns the stock, so we increase the shares
-      userData.stocksInvested[stockIndex].shares += quantity;
-    } else {
-      // Add a new stock object to the portfolio
-      userData.stocksInvested.push({
-        symbol: fetchedStockSymbol,
-        shares: quantity,
-      });
-    }
+    
+    if (!validateTrade(quantity)) return;
+    
+    setLoading(true);
+    setErrorMessage("");
 
     try {
-      // Update Firestore with the new portfolio and balance
-      await updateDoc(doc(db, "Users", userData.id), {
-        balance: newBalance,
-        stocksInvested: userData.stocksInvested,
+      const totalCost = stockPrice * quantity;
+      const updatedStocks = [...(userData.stocksInvested || [])];
+      const stockIndex = updatedStocks.findIndex(s => s.symbol === bestMatch);
+
+      if (stockIndex !== -1) {
+        updatedStocks[stockIndex].shares += quantity;
+      } else {
+        updatedStocks.push({
+          symbol: bestMatch,
+          shares: quantity
+        });
+      }
+
+      await updateUserData({
+        balance: userData.balance - totalCost,
+        stocksInvested: updatedStocks
       });
 
-      setErrorMessage("");
+      setStockHoldings(prev => prev + quantity);
       alert("Stock purchased successfully!");
-      setStockHoldings(prevHoldings => prevHoldings + quantity); // Update stock holdings displayed on the UI
     } catch (err) {
       setErrorMessage("Error purchasing stock. Please try again.");
-      console.error("Error buying stock:", err);
+      console.error("Buy error:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
   const sellStock = async () => {
     const quantity = parseInt(stockQuantity);
-
-    if (!userData || !stockPrice || !fetchedStockSymbol) {
-      setErrorMessage("Error: No user data or stock price available.");
-      return;
-    }
-
-    if(isNaN(quantity) || quantity<=0){
-      setErrorMessage("Please enter a valid quantity greater than 0.");
-      return;
-    }
-
-    const stockIndex = userData?.stocksInvested?.findIndex(stock => stock.symbol === stockSymbol.toUpperCase());
-    if (stockIndex === -1 || userData.stocksInvested[stockIndex]?.shares <= quantity) {
-      setErrorMessage("You do not own this stock.");
-      return;
-    }
-
-    // Update balance and stocksInvested
-    const newBalance = userData.balance + stockPrice * quantity;
-    userData.stocksInvested[stockIndex].shares -= quantity;
-
-    // If the user has no more shares of the stock, remove it from portfolio
-    if (userData.stocksInvested[stockIndex].shares === 0) {
-      userData.stocksInvested.splice(stockIndex, 1);
-    }
+    
+    if (!validateTrade(quantity, true)) return;
+    
+    setLoading(true);
+    setErrorMessage("");
 
     try {
-      // Update Firestore with the new portfolio and balance
-      await updateDoc(doc(db, "Users", userData.id), {
-        balance: newBalance,
-        stocksInvested: userData.stocksInvested,
+      const updatedStocks = [...userData.stocksInvested];
+      const stockIndex = updatedStocks.findIndex(s => s.symbol === bestMatch);
+      const saleValue = stockPrice * quantity;
+
+      if (updatedStocks[stockIndex].shares === quantity) {
+        updatedStocks.splice(stockIndex, 1);
+      } else {
+        updatedStocks[stockIndex].shares -= quantity;
+      }
+
+      await updateUserData({
+        balance: userData.balance + saleValue,
+        stocksInvested: updatedStocks
       });
 
-      setErrorMessage("");
+      setStockHoldings(prev => prev - quantity);
       alert("Stock sold successfully!");
-      setStockHoldings(prevHoldings => prevHoldings - quantity); // Update stock holdings displayed on the UI
     } catch (err) {
       setErrorMessage("Error selling stock. Please try again.");
-      console.error("Error selling stock:", err);
+      console.error("Sell error:", err);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const validateTrade = (quantity, isSell = false) => {
+    if (isNaN(quantity)) {
+      setErrorMessage("Please enter a valid quantity.");
+      return false;
+    }
+
+    if (quantity <= 0) {
+      setErrorMessage("Quantity must be greater than 0.");
+      return false;
+    }
+
+    if (!userData || !stockPrice || !bestMatch) {
+      setErrorMessage("Stock data not loaded. Please search again.");
+      return false;
+    }
+
+    if (isSell) {
+      const ownedStock = userData.stocksInvested?.find(
+        s => s.symbol === bestMatch
+      );
+      
+      if (!ownedStock || ownedStock.shares < quantity) {
+        setErrorMessage("You don't own enough shares to sell.");
+        return false;
+      }
+    } else {
+      if (userData.balance < stockPrice * quantity) {
+        setErrorMessage("Insufficient funds for this purchase.");
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const updateUserData = async (updates) => {
+    await updateDoc(doc(db, "Users", userData.userId), updates);
+    setUserData(prev => ({ ...prev, ...updates }));
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/login");
   };
 
   return (
     <div className="container">
-      {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
       <nav>
         <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
         <button onClick={() => navigate("/portfolio", { state: userData })}>Portfolio</button>
         <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
-        <button onClick={() => navigate("/login")}>Logout</button>
+        <button onClick={handleLogout}>Logout</button>
       </nav>
-      <h2>Trade Stocks</h2>
-      <input
-        type="text"
-        placeholder="Enter stock symbol or company name (e.g., AMZN or Amazon)"
-        value={stockSymbol}
-        onChange={(e) => setStockSymbol(e.target.value)}
-      />
-      <button className="trade-btn" onClick={searchStock}>Search</button>
 
-      {errorMessage && <p className="error-message">{errorMessage}</p>}
+      <h2>Trade Stocks</h2>
+      {errorMessage && <p className="error">{errorMessage}</p>}
+
+      <div className="search-container">
+        <input
+          type="text"
+          placeholder="Enter stock symbol (e.g., AMZN)"
+          value={stockSymbol}
+          onChange={(e) => setStockSymbol(e.target.value.toUpperCase())}
+          disabled={loading}
+        />
+        <button onClick={searchStock} disabled={loading}>
+          {loading ? "Searching..." : "Search"}
+        </button>
+      </div>
 
       {stockPrice !== null && (
         <div className="stock-info">
-          <p>Symbol: {fetchedStockSymbol} {companyName && `- ${companyName}`}</p>
-          <p>Current Price: ${stockPrice.toFixed(2)}</p>
+          <h3>{fetchedStockSymbol} {companyName && `- ${companyName}`}</h3>
+          <p>Price: ${stockPrice.toFixed(2)}</p>
           <p>Shares Owned: {stockHoldings}</p>
-          <input type="number" min="1" value={stockQuantity} onChange={(e)=> setStockQuantity(e.target.value)} placeholder="Enter Quantity"/>
-          <button onClick={buyStock}>Buy</button>
-          <button onClick={sellStock} disabled={stockHoldings === 0}>Sell</button>
+          
+          <div className="trade-actions">
+            <input 
+              type="number" 
+              min="1" 
+              value={stockQuantity}
+              onChange={(e) => setStockQuantity(e.target.value)}
+              disabled={loading}
+            />
+            <button onClick={buyStock} disabled={loading}>
+              {loading ? "Processing..." : "Buy"}
+            </button>
+            <button 
+              onClick={sellStock} 
+              disabled={loading || stockHoldings === 0}
+            >
+              Sell
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
-}
+};
 
+// Create Account Page Component
 const CreateAccountPage = () => {
   const navigate = useNavigate();
-  
-  // State variables to hold form data
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState(''); // For displaying any errors
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSignUp = async (e) => {
-    e.preventDefault(); // Prevent page refresh
-    setError(''); // Clear any old error
-  
+    e.preventDefault();
+    setError('');
+    
     if (!email || !username || !password || !confirmPassword) {
-      setError('Please fill in all fields.');
+      setError('All fields are required.');
       return;
     }
-  
+
     if (password !== confirmPassword) {
       setError("Passwords don't match!");
       return;
     }
 
-    try {
-      // Step 1: Check if username is already taken
-      const usersRef = collection(db, "Users");
-      const q = query(usersRef, where("username", "==", username));
-      const querySnapshot = await getDocs(q);
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
 
-      if (!querySnapshot.empty) {
-        setError("Username already exists! Choose a different one.");
+    setLoading(true);
+
+    try {
+      // Check if username exists (case-insensitive)
+      const usersRef = collection(db, "Users");
+      const q = query(usersRef, where("usernameLower", "==", username.toLowerCase()));
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        setError("Username already exists.");
         return;
       }
 
-      // Step 2: Create user with Firebase Auth (Handles passwords securely)
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const userId = userCredential.user.uid; // Get Firebase Auth UID
+      // Create user with Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(
+        auth, 
+        email, 
+        password
+      );
 
-      // Step 3: Initialize stocksInvested as an empty array of objects
-      const initialStocksInvested = [];
-
-      // Step 4: Store additional user details in Firestore
+      // Store user data in Firestore
       await addDoc(collection(db, "Users"), {
         email,
         username,
-        password, // ⚠️ Store hashed passwords instead
-        balance: 10000,
-        stocksInvested: initialStocksInvested, // Empty array of stock objects
+        usernameLower: username.toLowerCase(),
+        balance: 1000,
+        stocksInvested: [],
+        displayable: true,
+        createdAt: new Date()
       });
 
-      alert("Account created!");
-      navigate("/"); // Redirect to login page
+      navigate("/login");
+      alert("Account created successfully!");
     } catch (err) {
-      console.error("Error creating account: ", err); // Log detailed error
-      setError("Failed to create account. Try again.");
+      console.error("Signup error:", err);
+      
+      switch (err.code) {
+        case "auth/email-already-in-use":
+          setError("Email already in use.");
+          break;
+        case "auth/invalid-email":
+          setError("Invalid email format.");
+          break;
+        case "auth/weak-password":
+          setError("Password should be at least 6 characters.");
+          break;
+        default:
+          setError("Failed to create account. Please try again.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="container">
-      <button onClick={() => navigate('/login')}>Back</button>
+      <button onClick={() => navigate('/login')}>Back to Login</button>
       <h2>Create Account</h2>
-  
-      {error && <p style={{ color: 'red', fontWeight: 'bold' }}>{error}</p>} {/* Display error message */}
+      {error && <p className="error">{error}</p>}
 
       <form onSubmit={handleSignUp}>
         <input
@@ -397,10 +482,11 @@ const CreateAccountPage = () => {
         />
         <input
           type="password"
-          placeholder="Password"
+          placeholder="Password (min 6 characters)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          minLength={6}
         />
         <input
           type="password"
@@ -409,305 +495,252 @@ const CreateAccountPage = () => {
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
         />
-        <button type="submit">Sign Up</button>
+        <button type="submit" disabled={loading}>
+          {loading ? "Creating..." : "Sign Up"}
+        </button>
       </form>
     </div>
   );
-}
+};
 
+// Forgot Password Page Component
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
   
   const handleResetPassword = async () => {
     if (!email) {
-      setError("Please enter an email.");
+      setError("Please enter your email.");
       return;
     }
 
-    try {
-      // Check if email exists in Firestore database (users collection)
-      const usersCollection = collection(db, "users");
-      const q = query(usersCollection, where("email", "==", email));
-      const querySnapshot = await getDocs(q);
+    setLoading(true);
+    setError("");
+    setMessage("");
 
-      if (querySnapshot.empty) {
-        setError("This email is not registered.");
+    try {
+      // Check if email exists in Users collection
+      const usersRef = collection(db, "Users");
+      const q = query(usersRef, where("email", "==", email));
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        setError("No account found with this email.");
         return;
       }
 
-      // Send password reset email using Firebase Authentication
+      // Send password reset email
       await sendPasswordResetEmail(auth, email);
-      setMessage("Password reset email sent. Please check your inbox.");
-      setError(""); // Clear any previous errors
+      setMessage("Password reset email sent. Check your inbox.");
     } catch (err) {
-      setError("An error occurred. Please try again.");
-      setMessage(""); // Clear any success messages
+      console.error("Password reset error:", err);
+      setError("Failed to send reset email. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="container">
-      <button onClick={() => navigate("/login")}>Back</button>
+      <button onClick={() => navigate("/login")}>Back to Login</button>
       <h2>Forgot Password</h2>
-      <p>Enter your email to reset your password.</p>
       
+      <p>Enter your email to reset your password:</p>
       <input
         type="email"
         placeholder="Email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        required
+        disabled={loading}
       />
       
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      {message && <p style={{ color: "green" }}>{message}</p>}
+      {error && <p className="error">{error}</p>}
+      {message && <p className="success">{message}</p>}
       
-      <button onClick={handleResetPassword}>Reset Password</button>
+      <button onClick={handleResetPassword} disabled={loading}>
+        {loading ? "Sending..." : "Reset Password"}
+      </button>
     </div>
   );
-}
+};
 
+// Leaderboard Component
 const Leaderboard = () => {
   const [topUsers, setTopUsers] = useState([]);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
-  const [userData, setUserData] = useState(null); // Holds user data
-  const { username, password } = location.state || {}; // Get user data from location state
+  const userData = location.state;
 
   useEffect(() => {
-
-    if (!username || !password) {
-      setErrorMessage("Error: No user data passed.");
-      return; // Exit early if there's no username or password
+    if (!userData?.username) {
+      navigate("/login");
+      return;
     }
 
-    // Fetch user data from Firestore if username is valid
-    const getUserData = async () => {
-      try {
-        const userRef = collection(db, "Users");
-        const q = query(userRef, where("username", "==", username));
-        const querySnapshot = await getDocs(q);
-
-        if (!querySnapshot.empty) {
-          const userDoc = querySnapshot.docs[0];
-          setUserData({ ...userDoc.data(), id: userDoc.id }); // Store user data and userDoc ID
-        } else {
-          setErrorMessage("User not found.");
-        }
-      } catch (error) {
-        setErrorMessage("Error fetching user data.");
-        console.error("Error fetching user data:", error);
-      }
-    };
-
-    getUserData();
-    
-    // Fetch the top 10 users sorted by balance
     const fetchLeaderboard = async () => {
       try {
-        const userRef = collection(db, "Users");
-        const q = query(userRef, where("displayable", "==", true), orderBy("balance", "desc"), limit(10));
-        const querySnapshot = await getDocs(q);
+        const usersRef = collection(db, "Users");
+        const q = query(
+          usersRef, 
+          where("displayable", "==", true),
+          orderBy("balance", "desc"), 
+          limit(10)
+        );
+        
+        const snapshot = await getDocs(q);
+        const users = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
 
-        if (!querySnapshot.empty) {
-          const users = querySnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-          setTopUsers(users);
-        } else {
-          setErrorMessage("No users found.");
-        }
-      } catch (error) {
-        setErrorMessage("Error fetching leaderboard.");
-        console.error("Error fetching leaderboard:", error);
+        setTopUsers(users);
+      } catch (err) {
+        console.error("Leaderboard error:", err);
+        setError("Failed to load leaderboard.");
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchLeaderboard();
-  }, [username, password]); // Only run once on component mount
+  }, [navigate, userData]);
 
-  return (
-    <div className="min-h-screen bg-gray-100 text-center">
-      {/* Navbar */}
-      <nav>
-        <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
-        <button onClick={() => navigate("/portfolio", { state: userData })}>Portfolio</button>
-        <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
-        <button onClick={() => navigate("/login")}>Logout</button>
-      </nav>
-
-      {/* Leaderboard Section */}
-      <div className="mt-10 mx-auto bg-white p-6 rounded-lg shadow-md inline-block">
-        <h1 className="text-2xl font-bold">Leaderboard</h1>
-
-        {/* Error message */}
-        {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
-
-        {/* Table for displaying top users */}
-        <div className="mt-4">
-          <table className="min-w-full table-auto border-collapse">
-            <thead>
-              <tr>
-                <th className="py-2 px-4 border-b">Rank</th>
-                <th className="py-2 px-4 border-b">Username</th>
-                <th className="py-2 px-4 border-b">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topUsers.map((user, index) => (
-                <tr key={user.id} className={user.username === username ? "bg-red-100" : ""}>
-                  <td className="py-2 px-4 border-b">{index + 1}</td>
-                  <td className="py-2 px-4 border-b" style={user.username === username ? { color: 'red' } : {}}>
-                    {user.username}
-                  </td>
-                  <td className="py-2 px-4 border-b">${user.balance.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const Portfolio = () => {
-  const [userData, setUserData] = useState(null);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { username, password } = location.state || {};
-
-  useEffect(() => {
-    if (!username || !password) {
-      setErrorMessage("Error: No user data passed.");
-      return;
-    }
-
-    const getUserData = async () => {
-      try {
-        const userRef = collection(db, "Users");
-        const q = query(userRef, where("username", "==", username));
-        const querySnapshot = await getDocs(q);
-
-        if (!querySnapshot.empty) {
-          const userDoc = querySnapshot.docs[0];
-          setUserData({ ...userDoc.data(), id: userDoc.id });
-        } else {
-          setErrorMessage("User not found.");
-        }
-      } catch (error) {
-        setErrorMessage("Error fetching user data.");
-        console.error("Error fetching user data:", error);
-      }
-    };
-
-    getUserData();
-  }, [username, password]);
-
-  const updatePassword = async () => {
-    if (!newPassword.trim()) {
-      setErrorMessage("Password cannot be empty.");
-      return;
-    }
-    try {
-      await updateDoc(doc(db, "Users", userData.id), {
-        password: newPassword,
-      });
-      alert("Password updated successfully!");
-      setNewPassword("");
-    } catch (error) {
-      setErrorMessage("Error updating password.");
-      console.error("Error updating password:", error);
-    }
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/login");
   };
 
   return (
     <div className="container">
-      {errorMessage && <p style={{ color: "red" }}>{errorMessage}</p>}
       <nav>
         <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
         <button onClick={() => navigate("/portfolio", { state: userData })}>Portfolio</button>
         <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
-        <button onClick={() => navigate("/login")}>Logout</button>
+        <button onClick={handleLogout}>Logout</button>
       </nav>
-      <h2>Portfolio</h2>
-      {userData && (
-        <div>
-          <p>Username: {userData.username}</p>
-          <p>Email: {userData.email}</p>
-          <h3>Change Password</h3>
-          <input
-            type="password"
-            placeholder="New Password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-          />
-          <h3>Display on Leaderboard</h3>
-          <label>
-            <input
-              type="checkbox"
-              checked={userData.displayable}
-              onChange={async (e) => {
-                const newValue = e.target.checked;
-                try {
-                  const userDocRef = doc(db, "users", userData.uid);
-                  await updateDoc(userDocRef, {
-                    displayable: newValue,
-                  });
-                  setUserData((prev) => ({
-                    ...prev,
-                    displayable: newValue,
-                  }));
-                } catch (error) {
-                  console.error("Error updating displayable:", error);
-                  setErrorMessage("Failed to update leaderboard visibility.");
-                }
-              }}
-            />
-            Display my username on leaderboard
-          </label>
-          <button onClick={updatePassword}>Update Password</button>
-          <h3>Account Balance</h3>
-          <p>${userData.balance.toFixed(2)}</p>
-          <h3>Stocks Owned</h3>
-          <ul>
-            {userData.stocksInvested && userData.stocksInvested.length > 0 ? (
-              userData.stocksInvested.map((stock, index) => (
-                <li key={index}>
-                  {stock.symbol}: {stock.shares} shares
-                </li>
-              ))
-            ) : (
-              <p>No stocks owned.</p>
-            )}
-          </ul>
-        </div>
-      )}
+
+      <h1>Leaderboard</h1>
+      {loading && <p>Loading leaderboard...</p>}
+      {error && <p className="error">{error}</p>}
+
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Username</th>
+            <th>Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {topUsers.map((user, index) => (
+            <tr 
+              key={user.id} 
+              className={user.username === userData?.username ? "highlight" : ""}
+            >
+              <td>{index + 1}</td>
+              <td>{user.username}</td>
+              <td>${user.balance.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
-}
+};
 
-function App() {
+// Portfolio Component
+const Portfolio = () => {
+  const [userData, setUserData] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!location.state?.username) {
+      navigate("/login");
+      return;
+    }
+    setUserData(location.state);
+  }, [location.state, navigate]);
+
+  const toggleLeaderboardVisibility = async (visible) => {
+    try {
+      setLoading(true);
+      await updateDoc(doc(db, "Users", userData.userId), {
+        displayable: visible
+      });
+      setUserData(prev => ({ ...prev, displayable: visible }));
+      setError("");
+    } catch (err) {
+      console.error("Visibility update error:", err);
+      setError("Failed to update leaderboard visibility.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/login");
+  };
+
+  if (!userData) return <div>Loading...</div>;
+
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/create-account" element={<CreateAccountPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/trade" element={<TradePage />} />
-        <Route path="/leaderboard" element={<Leaderboard />} />
-        <Route path="/portfolio" element={<Portfolio />} />
-        <Route path="/" element={<LoginPage />} />
-      </Routes>
-    </Router>
+    <div className="container">
+      <nav>
+        <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
+        <button onClick={() => navigate("/portfolio", { state: userData })}>Portfolio</button>
+        <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
+        <button onClick={handleLogout}>Logout</button>
+      </nav>
+
+      <h2>Portfolio</h2>
+      {error && <p className="error">{error}</p>}
+
+      <div className="account-info">
+        <h3>Account Details</h3>
+        <p><strong>Username:</strong> {userData.username}</p>
+        <p><strong>Email:</strong> {userData.email}</p>
+        <p><strong>Account Balance:</strong> ${userData.balance.toFixed(2)}</p>
+      </div>
+
+      <div className="leaderboard-visibility">
+        <h3>Leaderboard Visibility</h3>
+        <label>
+          <input
+            type="checkbox"
+            checked={userData.displayable || false}
+            onChange={(e) => toggleLeaderboardVisibility(e.target.checked)}
+            disabled={loading}
+          />
+          Show my username on leaderboard
+        </label>
+      </div>
+
+      <div className="stock-holdings">
+        <h3>Stock Holdings</h3>
+        {userData.stocksInvested?.length > 0 ? (
+          <ul>
+            {userData.stocksInvested.map((stock, index) => (
+              <li key={index}>
+                {stock.symbol}: {stock.shares} shares
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>You don't own any stocks yet.</p>
+        )}
+      </div>
+    </div>
   );
-}
+};
 
 export default App;
