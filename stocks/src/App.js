@@ -216,13 +216,13 @@ const TradePage = () => {
     try {
       const totalCost = stockPrice * quantity;
       const updatedStocks = [...(userData.stocksInvested || [])];
-      const stockIndex = updatedStocks.findIndex(s => s.symbol === bestMatch);
+      const stockIndex = updatedStocks.findIndex(s => s.symbol === fetchedStockSymbol);
 
       if (stockIndex !== -1) {
         updatedStocks[stockIndex].shares += quantity;
       } else {
         updatedStocks.push({
-          symbol: bestMatch,
+          symbol: fetchedStockSymbol,
           shares: quantity
         });
       }
@@ -252,7 +252,7 @@ const TradePage = () => {
 
     try {
       const updatedStocks = [...userData.stocksInvested];
-      const stockIndex = updatedStocks.findIndex(s => s.symbol === bestMatch);
+      const stockIndex = updatedStocks.findIndex(s => s.symbol === fetchedStockSymbol);
       const saleValue = stockPrice * quantity;
 
       if (updatedStocks[stockIndex].shares === quantity) {
@@ -287,14 +287,14 @@ const TradePage = () => {
       return false;
     }
 
-    if (!userData || !stockPrice || !bestMatch) {
+    if (!userData || !stockPrice || !fetchedStockSymbol) {
       setErrorMessage("Stock data not loaded. Please search again.");
       return false;
     }
 
     if (isSell) {
       const ownedStock = userData.stocksInvested?.find(
-        s => s.symbol === bestMatch
+        s => s.symbol === fetchedStockSymbol
       );
       
       if (!ownedStock || ownedStock.shares < quantity) {
@@ -430,7 +430,7 @@ const CreateAccountPage = () => {
         email,
         username,
         usernameLower: username.toLowerCase(),
-        balance: 1000,
+        balance: 10000,
         stocksInvested: [],
         displayable: true,
         createdAt: new Date()
@@ -670,19 +670,49 @@ const Portfolio = () => {
     setUserData(location.state);
   }, [location.state, navigate]);
 
+  const updatePassword = async () => {
+    if (!newPassword.trim()) {
+      setError("Password cannot be empty.");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      // Update password in Firebase Auth
+      const user = auth.currentUser;
+      await updatePassword(user, newPassword);
+      
+      // Update in Firestore (if you're still storing it there)
+      await updateDoc(doc(db, "Users", userData.userId), {
+        password: newPassword
+      });
+
+      alert("Password updated successfully!");
+      setNewPassword("");
+    } catch (err) {
+      console.error("Password update error:", err);
+      setError("Failed to update password. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleLeaderboardVisibility = async (visible) => {
     try {
-      setLoading(true);
       await updateDoc(doc(db, "Users", userData.userId), {
         displayable: visible
       });
       setUserData(prev => ({ ...prev, displayable: visible }));
-      setError("");
     } catch (err) {
       console.error("Visibility update error:", err);
       setError("Failed to update leaderboard visibility.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -712,14 +742,27 @@ const Portfolio = () => {
         <p><strong>Account Balance:</strong> ${userData.balance.toFixed(2)}</p>
       </div>
 
+      <div className="password-change">
+        <h3>Change Password</h3>
+        <input
+          type="password"
+          placeholder="New Password (min 6 characters)"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          disabled={loading}
+        />
+        <button onClick={updatePassword} disabled={loading}>
+          {loading ? "Updating..." : "Update Password"}
+        </button>
+      </div>
+
       <div className="leaderboard-visibility">
         <h3>Leaderboard Visibility</h3>
         <label>
           <input
             type="checkbox"
-            checked={userData.displayable || false}
+            checked={userData.displayable}
             onChange={(e) => toggleLeaderboardVisibility(e.target.checked)}
-            disabled={loading}
           />
           Show my username on leaderboard
         </label>
