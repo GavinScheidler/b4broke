@@ -3,7 +3,8 @@ import { BrowserRouter as Router, Route, Routes, Link, useNavigate, useLocation 
 import { 
   auth, 
   db, 
-  createUserWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword, 
   collection, 
   query, 
   where, 
@@ -54,40 +55,45 @@ const LoginPage = () => {
     }
 
     try {
+      // 1. First find the user document by username
       const usersRef = collection(db, 'Users');
-      const q = query(usersRef, where("usernameLower", "==", username.toLowerCase()));
+      const q = query(usersRef, where("username", "==", username));
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
-        setError('Username does not exist.');
+        setError('Invalid username or password.');
         setLoading(false);
         return;
       }
 
+      // 2. Get the user document data
       const userDoc = querySnapshot.docs[0];
       const userData = userDoc.data();
 
-      // Sign in with Firebase Auth (password is hashed)
+      // 3. Sign in with Firebase Auth using the stored email
       try {
-        await auth.signInWithEmailAndPassword(userData.email, password);
+        console.log("Trying to log in with email:", userData.email);
+        console.log("Login attempt:", userData.email, password);
+        await signInWithEmailAndPassword(auth, userData.email, password);
+        
+        // 4. On successful login, navigate with user data
+        navigate('/trade', { 
+          state: { 
+            username: userData.username,
+            email: userData.email,
+            balance: userData.balance,
+            stocksInvested: userData.stocksInvested || [],
+            userId: userDoc.id,
+            displayable: userData.displayable || false
+          } 
+        });
       } catch (authError) {
-        setError('Invalid credentials. Please try again.');
-        setLoading(false);
-        return;
+        console.error("Authentication error:", authError);
+        setError('Invalid username or password.');
       }
-
-      navigate('/trade', { 
-        state: { 
-          username: userData.username,
-          email: userData.email,
-          balance: userData.balance,
-          stocksInvested: userData.stocksInvested || [],
-          userId: userDoc.id
-        } 
-      });
     } catch (err) {
-      setError('An error occurred. Please try again.');
       console.error("Login error:", err);
+      setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -162,7 +168,6 @@ const TradePage = () => {
     setErrorMessage("");
 
     try {
-      // Search for stock symbol
       const searchResponse = await fetch(
         `https://finnhub.io/api/v1/search?q=${stockSymbol}&token=${API_KEY}`
       );
@@ -177,7 +182,6 @@ const TradePage = () => {
       const symbol = bestMatch.symbol;
       const name = bestMatch.description;
 
-      // Get stock quote
       const quoteResponse = await fetch(
         `${STOCK_API_URL}${symbol}&token=${API_KEY}`
       );
@@ -192,7 +196,6 @@ const TradePage = () => {
       setStockPrice(quoteData.c);
       setCompanyName(name);
 
-      // Check if user owns this stock
       const ownedStock = userData?.stocksInvested?.find(
         stock => stock.symbol === symbol
       );
@@ -408,9 +411,8 @@ const CreateAccountPage = () => {
     setLoading(true);
 
     try {
-      // Check if username exists (case-insensitive)
       const usersRef = collection(db, "Users");
-      const q = query(usersRef, where("usernameLower", "==", username.toLowerCase()));
+      const q = query(usersRef, where("username", "==", username));
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
@@ -418,19 +420,16 @@ const CreateAccountPage = () => {
         return;
       }
 
-      // Create user with Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(
         auth, 
         email, 
         password
       );
 
-      // Store user data in Firestore
       await addDoc(collection(db, "Users"), {
         email,
         username,
-        usernameLower: username.toLowerCase(),
-        balance: 10000,
+        balance: 1000, // Changed to $1000 starting balance
         stocksInvested: [],
         displayable: true,
         createdAt: new Date()
@@ -522,7 +521,6 @@ const ForgotPasswordPage = () => {
     setMessage("");
 
     try {
-      // Check if email exists in Users collection
       const usersRef = collection(db, "Users");
       const q = query(usersRef, where("email", "==", email));
       const snapshot = await getDocs(q);
@@ -532,7 +530,6 @@ const ForgotPasswordPage = () => {
         return;
       }
 
-      // Send password reset email
       await sendPasswordResetEmail(auth, email);
       setMessage("Password reset email sent. Check your inbox.");
     } catch (err) {
@@ -670,40 +667,6 @@ const Portfolio = () => {
     setUserData(location.state);
   }, [location.state, navigate]);
 
-  const updatePassword = async () => {
-    if (!newPassword.trim()) {
-      setError("Password cannot be empty.");
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      // Update password in Firebase Auth
-      const user = auth.currentUser;
-      await updatePassword(user, newPassword);
-      
-      // Update in Firestore (if you're still storing it there)
-      await updateDoc(doc(db, "Users", userData.userId), {
-        password: newPassword
-      });
-
-      alert("Password updated successfully!");
-      setNewPassword("");
-    } catch (err) {
-      console.error("Password update error:", err);
-      setError("Failed to update password. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const toggleLeaderboardVisibility = async (visible) => {
     try {
       await updateDoc(doc(db, "Users", userData.userId), {
@@ -742,26 +705,12 @@ const Portfolio = () => {
         <p><strong>Account Balance:</strong> ${userData.balance.toFixed(2)}</p>
       </div>
 
-      <div className="password-change">
-        <h3>Change Password</h3>
-        <input
-          type="password"
-          placeholder="New Password (min 6 characters)"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          disabled={loading}
-        />
-        <button onClick={updatePassword} disabled={loading}>
-          {loading ? "Updating..." : "Update Password"}
-        </button>
-      </div>
-
       <div className="leaderboard-visibility">
         <h3>Leaderboard Visibility</h3>
         <label>
           <input
             type="checkbox"
-            checked={userData.displayable}
+            checked={userData.displayable || false}
             onChange={(e) => toggleLeaderboardVisibility(e.target.checked)}
           />
           Show my username on leaderboard
