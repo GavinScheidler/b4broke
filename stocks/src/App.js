@@ -9,7 +9,7 @@ import {
   query, 
   where, 
   getDocs,
-  addDoc, 
+  addDoc, setDoc,
   doc, 
   updateDoc,
   limit,
@@ -392,7 +392,7 @@ const CreateAccountPage = () => {
   const handleSignUp = async (e) => {
     e.preventDefault();
     setError('');
-    
+
     if (!email || !username || !password || !confirmPassword) {
       setError('All fields are required.');
       return;
@@ -411,35 +411,36 @@ const CreateAccountPage = () => {
     setLoading(true);
 
     try {
+      // Check if username already exists
       const usersRef = collection(db, "Users");
       const q = query(usersRef, where("username", "==", username));
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
         setError("Username already exists.");
+        setLoading(false);
         return;
       }
 
-      const userCredential = await createUserWithEmailAndPassword(
-        auth, 
-        email, 
-        password
-      );
+      // Create user with Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-      await addDoc(collection(db, "Users"), {
-        email,
+      // Save additional user data to Firestore, linked by UID
+      await setDoc(doc(db, "Users", user.uid), {
+        email: user.email,
         username,
-        balance: 1000, // Changed to $1000 starting balance
+        balance: 1000, 
         stocksInvested: [],
         displayable: true,
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
       navigate("/login");
       alert("Account created successfully!");
     } catch (err) {
       console.error("Signup error:", err);
-      
+
       switch (err.code) {
         case "auth/email-already-in-use":
           setError("Email already in use.");
