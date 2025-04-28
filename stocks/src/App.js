@@ -28,7 +28,6 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/trade" element={<TradePage />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
-        <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/" element={<LoginPage />} />
       </Routes>
     </Router>
@@ -69,28 +68,41 @@ const LoginPage = () => {
       // 2. Get the user document data
       const userDoc = querySnapshot.docs[0];
       const userData = userDoc.data();
+      const userDocRef = doc(db, "Users", userDoc.id);
 
       // 3. Sign in with Firebase Auth using the stored email
-      try {
-        console.log("Trying to log in with email:", userData.email);
-        console.log("Login attempt:", userData.email, password);
-        await signInWithEmailAndPassword(auth, userData.email, password);
-        
-        // 4. On successful login, navigate with user data
-        navigate('/trade', { 
-          state: { 
-            username: userData.username,
-            email: userData.email,
-            balance: userData.balance,
-            stocksInvested: userData.stocksInvested || [],
-            userId: userDoc.id,
-            displayable: userData.displayable || false
-          } 
+      await signInWithEmailAndPassword(auth, userData.email, password);
+
+      // 4. Handle daily login bonus
+      const now = new Date();
+      let updatedBalance = userData.balance;
+
+      if (!userData.lastLogin || (now - userData.lastLogin.toDate()) > 24 * 60 * 60 * 1000) {
+        // No last login recorded or more than 24 hours have passed
+        updatedBalance += 100;
+        await updateDoc(userDocRef, {
+          balance: updatedBalance,
+          lastLogin: now,
         });
-      } catch (authError) {
-        console.error("Authentication error:", authError);
-        setError('Invalid username or password.');
+        alert("Daily login bonus! +$100 credited.");
+      } else {
+        // Update only the lastLogin field
+        await updateDoc(userDocRef, {
+          lastLogin: now,
+        });
       }
+
+      // 5. Navigate to trade page
+      navigate('/trade', { 
+        state: { 
+          username: userData.username,
+          email: userData.email,
+          balance: updatedBalance,
+          stocksInvested: userData.stocksInvested || [],
+          userId: userDoc.id,
+          displayable: userData.displayable || false
+        } 
+      });
     } catch (err) {
       console.error("Login error:", err);
       setError('An error occurred. Please try again.');
@@ -132,9 +144,9 @@ const LoginPage = () => {
   );
 };
 
-// Trade Page Component
+
 const TradePage = () => {
-  const API_KEY = process.env.REACT_APP_FINNHUB_KEY;
+  const API_KEY = "cuigmfpr01qtqfmiku40cuigmfpr01qtqfmiku4g";
   const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
   
   const [companyName, setCompanyName] = useState("");
@@ -146,6 +158,8 @@ const TradePage = () => {
   const [stockHoldings, setStockHoldings] = useState(0);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const [error, setError] = useState("");
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -163,39 +177,42 @@ const TradePage = () => {
       setErrorMessage("Please enter a stock symbol or company name.");
       return;
     }
-    
     setLoading(true);
     setErrorMessage("");
-
+  
     try {
+      // 1. Search for the stock symbol
       const searchResponse = await fetch(
-        `https://finnhub.io/api/v1/search?q=${stockSymbol}&token=${API_KEY}`
+        `https://finnhub.io/api/v1/search?q=${stockSymbol.toUpperCase()}&token=${API_KEY}`
       );
       const searchData = await searchResponse.json();
-
+  
       if (!searchData.result?.length) {
         setErrorMessage("No matching stock found.");
+        setLoading(false);
         return;
       }
-
-      const bestMatch = searchData.result[0];
+  
+      const bestMatch = searchData.result[0]; // pick the best match
       const symbol = bestMatch.symbol;
       const name = bestMatch.description;
-
+  
+      // 2. Fetch the quote (price) for that symbol
       const quoteResponse = await fetch(
         `${STOCK_API_URL}${symbol}&token=${API_KEY}`
       );
       const quoteData = await quoteResponse.json();
-
+  
       if (!quoteData.c) {
         setErrorMessage("Price data unavailable.");
+        setLoading(false);
         return;
       }
-
+  
       setFetchedStockSymbol(symbol);
       setStockPrice(quoteData.c);
       setCompanyName(name);
-
+  
       const ownedStock = userData?.stocksInvested?.find(
         stock => stock.symbol === symbol
       );
@@ -207,12 +224,11 @@ const TradePage = () => {
       setLoading(false);
     }
   };
+  
 
   const buyStock = async () => {
     const quantity = parseInt(stockQuantity);
-    
     if (!validateTrade(quantity)) return;
-    
     setLoading(true);
     setErrorMessage("");
 
@@ -223,10 +239,12 @@ const TradePage = () => {
 
       if (stockIndex !== -1) {
         updatedStocks[stockIndex].shares += quantity;
+        updatedStocks[stockIndex].totalSpent += totalCost;
       } else {
         updatedStocks.push({
           symbol: fetchedStockSymbol,
-          shares: quantity
+          shares: quantity,
+          totalSpent: totalCost
         });
       }
 
@@ -247,9 +265,7 @@ const TradePage = () => {
 
   const sellStock = async () => {
     const quantity = parseInt(stockQuantity);
-    
     if (!validateTrade(quantity, true)) return;
-    
     setLoading(true);
     setErrorMessage("");
 
@@ -299,7 +315,6 @@ const TradePage = () => {
       const ownedStock = userData.stocksInvested?.find(
         s => s.symbol === fetchedStockSymbol
       );
-      
       if (!ownedStock || ownedStock.shares < quantity) {
         setErrorMessage("You don't own enough shares to sell.");
         return false;
@@ -324,59 +339,184 @@ const TradePage = () => {
     navigate("/login");
   };
 
+  const toggleLeaderboardVisibility = async (visible) => {
+    try {
+      await updateDoc(doc(db, "Users", userData.userId), {
+        displayable: visible
+      });
+      setUserData(prev => ({ ...prev, displayable: visible }));
+    } catch (err) {
+      console.error("Visibility update error:", err);
+      setError("Failed to update leaderboard visibility.");
+    }
+  };
+
+  if (!userData) return <div>Loading...</div>;
+
   return (
-    <div className="container">
-      <nav>
-        <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
-        <button onClick={() => navigate("/portfolio", { state: userData })}>Portfolio</button>
-        <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
-        <button onClick={handleLogout}>Logout</button>
+    <div style={styles.container}>
+      <nav style={styles.nav}>
+        <button style={styles.navButton} onClick={() => navigate("/trade", { state: userData })}>Trade</button>
+        <button style={styles.navButton} onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
+        <button style={styles.navButton} onClick={handleLogout}>Logout</button>
       </nav>
 
-      <h2>Trade Stocks</h2>
-      {errorMessage && <p className="error">{errorMessage}</p>}
+      <div style={styles.mainContent}>
+        {/* Trade Section */}
+        <div style={styles.tradeSection}>
+          <h2>Trade Stocks</h2>
+          {errorMessage && <p style={styles.error}>{errorMessage}</p>}
 
-      <div className="search-container">
-        <input
-          type="text"
-          placeholder="Enter stock symbol (e.g., AMZN)"
-          value={stockSymbol}
-          onChange={(e) => setStockSymbol(e.target.value.toUpperCase())}
-          disabled={loading}
-        />
-        <button onClick={searchStock} disabled={loading}>
-          {loading ? "Searching..." : "Search"}
-        </button>
-      </div>
-
-      {stockPrice !== null && (
-        <div className="stock-info">
-          <h3>{fetchedStockSymbol} {companyName && `- ${companyName}`}</h3>
-          <p>Price: ${stockPrice.toFixed(2)}</p>
-          <p>Shares Owned: {stockHoldings}</p>
-          
-          <div className="trade-actions">
-            <input 
-              type="number" 
-              min="1" 
-              value={stockQuantity}
-              onChange={(e) => setStockQuantity(e.target.value)}
+          <div style={styles.searchContainer}>
+            <input
+              type="text"
+              placeholder="Enter stock symbol (e.g., AMZN)"
+              value={stockSymbol}
+              onChange={(e) => setStockSymbol(e.target.value.toUpperCase())}
               disabled={loading}
+              style={styles.input}
             />
-            <button onClick={buyStock} disabled={loading}>
-              {loading ? "Processing..." : "Buy"}
-            </button>
-            <button 
-              onClick={sellStock} 
-              disabled={loading || stockHoldings === 0}
-            >
-              Sell
+            <button onClick={searchStock} disabled={loading} style={styles.button}>
+              {loading ? "Searching..." : "Search"}
             </button>
           </div>
+
+          {stockPrice !== null && (
+            <div style={styles.stockInfo}>
+              <h3>{fetchedStockSymbol} {companyName && `- ${companyName}`}</h3>
+              <p>Price: ${stockPrice.toFixed(2)}</p>
+              <p>Shares Owned: {stockHoldings}</p>
+              
+              <div style={styles.tradeActions}>
+                <input 
+                  type="number" 
+                  min="1" 
+                  value={stockQuantity}
+                  onChange={(e) => setStockQuantity(e.target.value)}
+                  disabled={loading}
+                  style={styles.input}
+                />
+                <button onClick={buyStock} disabled={loading} style={styles.button}>
+                  {loading ? "Processing..." : "Buy"}
+                </button>
+                <button 
+                  onClick={sellStock} 
+                  disabled={loading || stockHoldings === 0}
+                  style={styles.button}
+                >
+                  Sell
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Portfolio Section */}
+        <div style={styles.portfolioSection}>
+          <h2>Portfolio</h2>
+          {error && <p style={styles.error}>{error}</p>}
+
+          <div style={styles.accountInfo}>
+            <h3>Account Details</h3>
+            <p><strong>Username:</strong> {userData.username}</p>
+            <p><strong>Email:</strong> {userData.email}</p>
+            <p><strong>Account Balance:</strong> ${userData.balance.toFixed(2)}</p>
+          </div>
+
+          <div style={styles.leaderboardVisibility}>
+            <h3>Leaderboard Visibility</h3>
+            <label>
+              <input
+                type="checkbox"
+                checked={userData.displayable || false}
+                onChange={(e) => toggleLeaderboardVisibility(e.target.checked)}
+              />
+              Show my username on leaderboard
+            </label>
+          </div>
+
+          <div style={styles.stockHoldings}>
+            <h3>Stock Holdings</h3>
+            {userData.stocksInvested?.length > 0 ? (
+              <ul>
+                {userData.stocksInvested.map((stock, index) => (
+                  <li key={index}>
+                    {stock.symbol}: {stock.shares} shares (Spent: ${stock.totalSpent?.toFixed(2) || "0.00"})
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>You don't own any stocks yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
+};
+
+// Hardcoded CSS
+const styles = {
+  container: {
+    fontFamily: "Arial, sans-serif",
+    padding: "10px",
+  },
+  nav: {
+    marginBottom: "20px",
+  },
+  navButton: {
+    marginRight: "10px",
+    padding: "10px 15px",
+    fontSize: "16px",
+    cursor: "pointer",
+  },
+  mainContent: {
+    display: "flex",
+    gap: "30px",
+  },
+  tradeSection: {
+    flex: 1,
+    padding: "20px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+  },
+  portfolioSection: {
+    flex: 1,
+    padding: "20px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+  },
+  searchContainer: {
+    marginBottom: "10px",
+  },
+  stockInfo: {
+    marginTop: "10px",
+  },
+  input: {
+    marginRight: "10px",
+    padding: "8px",
+    fontSize: "16px",
+  },
+  button: {
+    padding: "8px 15px",
+    fontSize: "16px",
+    cursor: "pointer",
+  },
+  tradeActions: {
+    marginTop: "10px",
+  },
+  accountInfo: {
+    marginBottom: "20px",
+  },
+  leaderboardVisibility: {
+    marginBottom: "20px",
+  },
+  stockHoldings: {
+    marginBottom: "20px",
+  },
+  error: {
+    color: "red",
+  },
 };
 
 // Create Account Page Component
@@ -434,6 +574,7 @@ const CreateAccountPage = () => {
         stocksInvested: [],
         displayable: true,
         createdAt: new Date(),
+        lastLogin: new Date(),
       });
 
       navigate("/login");
@@ -565,11 +706,11 @@ const ForgotPasswordPage = () => {
   );
 };
 
-// Leaderboard Component
 const Leaderboard = () => {
   const [topUsers, setTopUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [limitAmount, setLimitAmount] = useState(10);
   const location = useLocation();
   const navigate = useNavigate();
   const userData = location.state;
@@ -579,50 +720,95 @@ const Leaderboard = () => {
       navigate("/login");
       return;
     }
-
-    const fetchLeaderboard = async () => {
-      try {
-        const usersRef = collection(db, "Users");
-        const q = query(
-          usersRef, 
-          where("displayable", "==", true),
-          orderBy("balance", "desc"), 
-          limit(10)
-        );
-        
-        const snapshot = await getDocs(q);
-        const users = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        setTopUsers(users);
-      } catch (err) {
-        console.error("Leaderboard error:", err);
-        setError("Failed to load leaderboard.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchLeaderboard();
-  }, [navigate, userData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userData, limitAmount]); 
+
+  const fetchLeaderboard = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const usersRef = collection(db, "Users");
+      const q = query(
+        usersRef,
+        where("displayable", "==", true),
+        orderBy("balance", "desc"),
+        limit(limitAmount)
+      );
+      const snapshot = await getDocs(q);
+      const users = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTopUsers(users);
+    } catch (err) {
+      console.error("Leaderboard error:", err);
+      setError("Failed to load leaderboard.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
     navigate("/login");
   };
 
+  const handleLimitChange = (e) => {
+    setLimitAmount(parseInt(e.target.value));
+  };
+
+  const handleUpdateClick = () => {
+    fetchLeaderboard();
+  };
+
   return (
     <div className="container">
       <nav>
         <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
-        <button onClick={() => navigate("/portfolio", { state: userData })}>Portfolio</button>
         <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
         <button onClick={handleLogout}>Logout</button>
       </nav>
 
       <h1>Leaderboard</h1>
+
+      {/* Limit selection controls */}
+      <div className="limit-controls" style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "20px" }}>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+          <label>
+            <input
+              type="radio"
+              name="limit"
+              value="10"
+              checked={limitAmount === 10}
+              onChange={handleLimitChange}
+            />
+            10
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="limit"
+              value="25"
+              checked={limitAmount === 25}
+              onChange={handleLimitChange}
+            />
+            25
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="limit"
+              value="50"
+              checked={limitAmount === 50}
+              onChange={handleLimitChange}
+            />
+            50
+          </label>
+        </div>
+        <button onClick={handleUpdateClick}>Update</button>
+      </div>
+
       {loading && <p>Loading leaderboard...</p>}
       {error && <p className="error">{error}</p>}
 
@@ -636,8 +822,8 @@ const Leaderboard = () => {
         </thead>
         <tbody>
           {topUsers.map((user, index) => (
-            <tr 
-              key={user.id} 
+            <tr
+              key={user.id}
               className={user.username === userData?.username ? "highlight" : ""}
             >
               <td>{index + 1}</td>
@@ -645,93 +831,16 @@ const Leaderboard = () => {
               <td>${user.balance.toFixed(2)}</td>
             </tr>
           ))}
+          {/* If fewer users than limitAmount, show the special row */}
+          {topUsers.length < limitAmount && !loading && (
+            <tr>
+              <td colSpan="3" style={{ textAlign: "center", fontStyle: "italic" }}>
+                ----- all users shown -----
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
-    </div>
-  );
-};
-
-// Portfolio Component
-const Portfolio = () => {
-  const [userData, setUserData] = useState(null);
-  const [newPassword, setNewPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!location.state?.username) {
-      navigate("/login");
-      return;
-    }
-    setUserData(location.state);
-  }, [location.state, navigate]);
-
-  const toggleLeaderboardVisibility = async (visible) => {
-    try {
-      await updateDoc(doc(db, "Users", userData.userId), {
-        displayable: visible
-      });
-      setUserData(prev => ({ ...prev, displayable: visible }));
-    } catch (err) {
-      console.error("Visibility update error:", err);
-      setError("Failed to update leaderboard visibility.");
-    }
-  };
-
-  const handleLogout = async () => {
-    await signOut(auth);
-    navigate("/login");
-  };
-
-  if (!userData) return <div>Loading...</div>;
-
-  return (
-    <div className="container">
-      <nav>
-        <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
-        <button onClick={() => navigate("/portfolio", { state: userData })}>Portfolio</button>
-        <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
-        <button onClick={handleLogout}>Logout</button>
-      </nav>
-
-      <h2>Portfolio</h2>
-      {error && <p className="error">{error}</p>}
-
-      <div className="account-info">
-        <h3>Account Details</h3>
-        <p><strong>Username:</strong> {userData.username}</p>
-        <p><strong>Email:</strong> {userData.email}</p>
-        <p><strong>Account Balance:</strong> ${userData.balance.toFixed(2)}</p>
-      </div>
-
-      <div className="leaderboard-visibility">
-        <h3>Leaderboard Visibility</h3>
-        <label>
-          <input
-            type="checkbox"
-            checked={userData.displayable || false}
-            onChange={(e) => toggleLeaderboardVisibility(e.target.checked)}
-          />
-          Show my username on leaderboard
-        </label>
-      </div>
-
-      <div className="stock-holdings">
-        <h3>Stock Holdings</h3>
-        {userData.stocksInvested?.length > 0 ? (
-          <ul>
-            {userData.stocksInvested.map((stock, index) => (
-              <li key={index}>
-                {stock.symbol}: {stock.shares} shares
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>You don't own any stocks yet.</p>
-        )}
-      </div>
     </div>
   );
 };
