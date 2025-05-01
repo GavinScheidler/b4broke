@@ -9,13 +9,16 @@ import {
   query, 
   where, 
   getDocs,
-  addDoc, setDoc,
+  addDoc,
+  setDoc,
   doc, 
   updateDoc,
   limit,
   orderBy, 
   sendPasswordResetEmail,
-  signOut
+  signOut,
+  updateUserData,
+  updatePassword
 } from './firebase';
 
 // Main App Component
@@ -35,6 +38,7 @@ function App() {
 }
 
 // Login Page Component
+
 const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -54,7 +58,6 @@ const LoginPage = () => {
     }
 
     try {
-      // 1. First find the user document by username
       const usersRef = collection(db, 'Users');
       const q = query(usersRef, where("username", "==", username));
       const querySnapshot = await getDocs(q);
@@ -65,20 +68,16 @@ const LoginPage = () => {
         return;
       }
 
-      // 2. Get the user document data
       const userDoc = querySnapshot.docs[0];
       const userData = userDoc.data();
       const userDocRef = doc(db, "Users", userDoc.id);
 
-      // 3. Sign in with Firebase Auth using the stored email
       await signInWithEmailAndPassword(auth, userData.email, password);
 
-      // 4. Handle daily login bonus
       const now = new Date();
       let updatedBalance = userData.balance;
 
       if (!userData.lastLogin || (now - userData.lastLogin.toDate()) > 24 * 60 * 60 * 1000) {
-        // No last login recorded or more than 24 hours have passed
         updatedBalance += 100;
         await updateDoc(userDocRef, {
           balance: updatedBalance,
@@ -86,13 +85,11 @@ const LoginPage = () => {
         });
         alert("Daily login bonus! +$100 credited.");
       } else {
-        // Update only the lastLogin field
         await updateDoc(userDocRef, {
           lastLogin: now,
         });
       }
 
-      // 5. Navigate to trade page
       navigate('/trade', { 
         state: { 
           username: userData.username,
@@ -112,17 +109,18 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="containerL">
+    <div style={styles2.container}>
       <h2>Login</h2>
-      {error && <p className="error">{error}</p>}
+      {error && <p style={styles2.error}>{error}</p>}
       
-      <form onSubmit={handleLogin}>
+      <form onSubmit={handleLogin} style={styles2.form}>
         <input
           type="text"
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
+          style={styles2.input}
         />
         <input
           type="password"
@@ -130,25 +128,86 @@ const LoginPage = () => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          style={styles2.input}
         />
-        <button type="submit" disabled={loading}>
+        <button type="submit" disabled={loading} style={styles2.button}>
           {loading ? "Loading..." : "Login"}
         </button>
       </form>
-      
-      <div className="links">
-        <Link to="/forgot-password">Forgot Password?</Link>
-        <Link to="/create-account">Create an Account</Link>
+
+      <div style={styles2.buttonLinks}>
+        <Link to="/forgot-password" style={styles2.link}>
+          <button type="button" style={styles2.secondaryButton}>Forgot Password</button>
+        </Link>
+        <Link to="/create-account" style={styles2.link}>
+          <button type="button" style={styles2.secondaryButton}>Create an Account</button>
+        </Link>
       </div>
     </div>
   );
 };
 
+const styles2 = {
+  container: {
+    width: '100%',
+    maxWidth: '400px',
+    margin: '50px auto',
+    padding: '20px',
+    border: '1px solid #ddd',
+    borderRadius: '10px',
+    textAlign: 'center',
+    fontFamily: 'Arial, sans-serif'
+  },
+  error: {
+    color: 'red',
+    marginBottom: '10px'
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  input: {
+    padding: '10px',
+    fontSize: '1em',
+    borderRadius: '5px',
+    border: '1px solid #ccc'
+  },
+  button: {
+    padding: '10px',
+    fontSize: '1em',
+    borderRadius: '5px',
+    border: 'none',
+    backgroundColor: '#007BFF',
+    color: 'white',
+    cursor: 'pointer'
+  },
+  buttonLinks: {
+    marginTop: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  secondaryButton: {
+    padding: '10px',
+    fontSize: '1em',
+    borderRadius: '5px',
+    border: '1px solid #007BFF',
+    backgroundColor: 'white',
+    color: '#007BFF',
+    cursor: 'pointer'
+  },
+  link: {
+    textDecoration: 'none'
+  }
+};
 
 const TradePage = () => {
-  const API_KEY = "cuigmfpr01qtqfmiku40cuigmfpr01qtqfmiku4g";
+  const API_KEY = "d09drcpr01qnv9ciacngd09drcpr01qnv9ciaco0";
   const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
-  
+  const ALT_API_KEY = "d09dnh9r01qnv9ci9lhgd09dnh9r01qnv9ci9li0";
+  //const ALT_API_KEY = "d09dfmpr01qnv9ci86fgd09dfmpr01qnv9ci86g0";
+
   const [companyName, setCompanyName] = useState("");
   const [stockQuantity, setStockQuantity] = useState(1);
   const [fetchedStockSymbol, setFetchedStockSymbol] = useState("");
@@ -158,6 +217,12 @@ const TradePage = () => {
   const [stockHoldings, setStockHoldings] = useState(0);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [livePrices, setLivePrices] = useState({});
+  const [confirmingSellAll, setConfirmingSellAll] = useState(null);
+  const [resetPasswordMode, setResetPasswordMode] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   const [error, setError] = useState("");
 
@@ -172,47 +237,85 @@ const TradePage = () => {
     setUserData(location.state);
   }, [location.state, navigate]);
 
+  useEffect(() => {
+    const fetchAllPrices = async () => {
+      if (!userData?.stocksInvested?.length) return;
+      const priceMap = {};
+  
+      await Promise.all(userData.stocksInvested.map(async (stock) => {
+        const price = await getCurrentPrice(stock.symbol);
+        if (price) priceMap[stock.symbol] = price;
+      }));
+  
+      setLivePrices(priceMap);
+      
+      // Recalculate net worth when prices update
+      calculateNetWorth();
+    };
+  
+    fetchAllPrices();
+  }, [userData]);
+
+  const calculateNetWorth = async () => {
+    if (!userData) return 0;
+    
+    let stockValue = 0;
+    if (userData.stocksInvested?.length) {
+      stockValue = userData.stocksInvested.reduce((total, stock) => {
+        const currentPrice = livePrices[stock.symbol] || 0;
+        return total + (currentPrice * stock.shares);
+      }, 0);
+    }
+    
+    const netWorth = userData.balance + stockValue;
+    
+    // Save to database
+    try {
+      await updateDoc(doc(db, "Users", userData.userId), {
+        networth: netWorth
+      });
+    } catch (err) {
+      console.error("Error saving net worth:", err);
+    }
+    
+    return netWorth;
+  };
+
   const searchStock = async () => {
     if (!stockSymbol.trim()) {
-      setErrorMessage("Please enter a stock symbol or company name.");
+      setErrorMessage("Please enter a stock symbol.");
       return;
     }
     setLoading(true);
     setErrorMessage("");
-  
+
     try {
-      // 1. Search for the stock symbol
-      const searchResponse = await fetch(
-        `https://finnhub.io/api/v1/search?q=${stockSymbol.toUpperCase()}&token=${API_KEY}`
-      );
+      const searchResponse = await fetch("https://finnhub.io/api/v1/search?q=${stockSymbol}&token=${API_KEY}");
       const searchData = await searchResponse.json();
-  
+
       if (!searchData.result?.length) {
         setErrorMessage("No matching stock found.");
-        setLoading(false);
         return;
       }
-  
-      const bestMatch = searchData.result[0]; // pick the best match
+
+      const bestMatch = searchData.result[0];
       const symbol = bestMatch.symbol;
       const name = bestMatch.description;
-  
-      // 2. Fetch the quote (price) for that symbol
+
       const quoteResponse = await fetch(
-        `${STOCK_API_URL}${symbol}&token=${API_KEY}`
+        "${STOCK_API_URL}${symbol}&token=${API_KEY}"
       );
       const quoteData = await quoteResponse.json();
-  
+
       if (!quoteData.c) {
         setErrorMessage("Price data unavailable.");
-        setLoading(false);
         return;
       }
-  
+
       setFetchedStockSymbol(symbol);
       setStockPrice(quoteData.c);
       setCompanyName(name);
-  
+
       const ownedStock = userData?.stocksInvested?.find(
         stock => stock.symbol === symbol
       );
@@ -225,7 +328,6 @@ const TradePage = () => {
     }
   };
   
-
   const buyStock = async () => {
     const quantity = parseInt(stockQuantity);
     if (!validateTrade(quantity)) return;
@@ -268,23 +370,29 @@ const TradePage = () => {
     if (!validateTrade(quantity, true)) return;
     setLoading(true);
     setErrorMessage("");
-
+  
     try {
       const updatedStocks = [...userData.stocksInvested];
       const stockIndex = updatedStocks.findIndex(s => s.symbol === fetchedStockSymbol);
+      const owned = updatedStocks[stockIndex];
       const saleValue = stockPrice * quantity;
-
-      if (updatedStocks[stockIndex].shares === quantity) {
+  
+      // Adjust totalSpent proportionally
+      const costPerShare = owned.totalSpent / owned.shares;
+      const costReduction = costPerShare * quantity;
+      owned.totalSpent -= costReduction;
+  
+      if (owned.shares === quantity) {
         updatedStocks.splice(stockIndex, 1);
       } else {
-        updatedStocks[stockIndex].shares -= quantity;
+        owned.shares -= quantity;
       }
-
+  
       await updateUserData({
         balance: userData.balance + saleValue,
         stocksInvested: updatedStocks
       });
-
+  
       setStockHoldings(prev => prev - quantity);
       alert("Stock sold successfully!");
     } catch (err) {
@@ -293,6 +401,80 @@ const TradePage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const sellAllShares = async (symbol) => {
+    if (confirmingSellAll !== symbol) {
+      setConfirmingSellAll(symbol);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const stockToSell = userData.stocksInvested.find(s => s.symbol === symbol);
+      if (!stockToSell) return;
+
+      const currentPrice = livePrices[symbol] || 0;
+      const saleValue = currentPrice * stockToSell.shares;
+
+      const updatedStocks = userData.stocksInvested.filter(s => s.symbol !== symbol);
+
+      await updateUserData({
+        balance: userData.balance + saleValue,
+        stocksInvested: updatedStocks
+      });
+
+      setConfirmingSellAll(null);
+      alert(`All shares of ${symbol} sold successfully!`);
+    } catch (err) {
+      setErrorMessage("Error selling all shares. Please try again.");
+      console.error("Sell all error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordMode) {
+      setResetPasswordMode(true);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Update password in Firebase Auth
+      const user = auth.currentUser;
+      await updatePassword(user, newPassword);
+      
+      // Reset the form
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordError("");
+      setResetPasswordMode(false);
+      alert("Password updated successfully!");
+    } catch (err) {
+      setPasswordError("Error updating password. Please try again.");
+      console.error("Password update error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelPasswordReset = () => {
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setResetPasswordMode(false);
   };
 
   const validateTrade = (quantity, isSell = false) => {
@@ -330,8 +512,24 @@ const TradePage = () => {
   };
 
   const updateUserData = async (updates) => {
-    await updateDoc(doc(db, "Users", userData.userId), updates);
-    setUserData(prev => ({ ...prev, ...updates }));
+    // Calculate new net worth
+    const stockValue = updates.stocksInvested?.reduce((total, stock) => {
+      const currentPrice = livePrices[stock.symbol] || 0;
+      return total + (currentPrice * stock.shares);
+    }, 0) || 
+    userData.stocksInvested?.reduce((total, stock) => {
+      const currentPrice = livePrices[stock.symbol] || 0;
+      return total + (currentPrice * stock.shares);
+    }, 0) || 0;
+  
+    const newBalance = updates.balance !== undefined ? updates.balance : userData.balance;
+    const networth = newBalance + stockValue;
+  
+    await updateDoc(doc(db, "Users", userData.userId), {
+      ...updates,
+      networth
+    });
+    setUserData(prev => ({ ...prev, ...updates, networth }));
   };
 
   const handleLogout = async () => {
@@ -351,6 +549,129 @@ const TradePage = () => {
     }
   };
 
+  const getCurrentPrice = async (symbol) => {
+    try {
+      const response = await fetch(
+        `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${ALT_API_KEY}`
+      );
+      const data = await response.json();
+      return data.c || null;
+    } catch (error) {
+      console.error("Error fetching alt price:", error);
+      return null;
+    }
+  };
+
+  const quickTrade = async (symbol, type) => {
+    const stockPrice = livePrices[symbol];
+    if (!stockPrice || !userData) return;
+  
+    const quantity = 1;
+    const updatedStocks = [...(userData.stocksInvested || [])];
+    const stockIndex = updatedStocks.findIndex(s => s.symbol === symbol);
+  
+    if (type === "buy") {
+      if (userData.balance < stockPrice) {
+        setErrorMessage("Insufficient balance for quick buy.");
+        return;
+      }
+  
+      if (stockIndex !== -1) {
+        updatedStocks[stockIndex].shares += 1;
+        updatedStocks[stockIndex].totalSpent += stockPrice;
+      } else {
+        updatedStocks.push({ symbol, shares: 1, totalSpent: stockPrice });
+      }
+  
+      await updateUserData({
+        balance: userData.balance - stockPrice,
+        stocksInvested: updatedStocks
+      });
+  
+    } else if (type === "sell") {
+      if (stockIndex === -1 || updatedStocks[stockIndex].shares < 1) {
+        setErrorMessage("Not enough shares to quick sell.");
+        return;
+      }
+  
+      const owned = updatedStocks[stockIndex];
+      const costPerShare = owned.totalSpent / owned.shares;
+      owned.totalSpent -= costPerShare;
+      owned.shares -= 1;
+  
+      if (owned.shares === 0) {
+        updatedStocks.splice(stockIndex, 1);
+      }
+  
+      await updateUserData({
+        balance: userData.balance + stockPrice,
+        stocksInvested: updatedStocks
+      });
+    }
+  };
+   
+  const renderHoldingsTable = () => {
+    if (!userData?.stocksInvested?.length) {
+      return <p>You don't own any stocks yet.</p>;
+    }
+  
+    return (
+      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Shares</th>
+            <th>Total Spent</th>
+            <th>Current Price</th>
+            <th>Current Value</th>
+            <th>% Change</th>
+            <th>Quick Buy</th>
+            <th>Quick Sell</th>
+            <th>Sell All</th>
+          </tr>
+        </thead>
+        <tbody>
+          {userData.stocksInvested.map((stock, index) => {
+            const livePrice = livePrices[stock.symbol] || 0;
+            const currentValue = livePrice * stock.shares;
+            const percentChange = stock.totalSpent
+              ? (((currentValue - stock.totalSpent) / stock.totalSpent) * 100).toFixed(2)
+              : "0.00";
+  
+            return (
+              <tr key={index}>
+                <td>{stock.symbol}</td>
+                <td>{stock.shares}</td>
+                <td>${stock.totalSpent.toFixed(2)}</td>
+                <td>${livePrice.toFixed(2)}</td>
+                <td>${currentValue.toFixed(2)}</td>
+                <td style={{ color: percentChange >= 0 ? "green" : "red" }}>
+                  {percentChange}%
+                </td>
+                <td>
+                  <button onClick={() => quickTrade(stock.symbol, "buy")}>Buy 1</button>
+                </td>
+                <td>
+                  <button onClick={() => quickTrade(stock.symbol, "sell")} disabled={stock.shares < 1}>
+                    Sell 1
+                  </button>
+                </td>
+                <td>
+                  <button 
+                    onClick={() => sellAllShares(stock.symbol)}
+                    style={{ backgroundColor: confirmingSellAll === stock.symbol ? "#ffcccc" : "" }}
+                  >
+                    {confirmingSellAll === stock.symbol ? "Are you sure?" : "Sell All"}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    );
+  };  
+  
   if (!userData) return <div>Loading...</div>;
 
   return (
@@ -360,13 +681,19 @@ const TradePage = () => {
         <button style={styles.navButton} onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
         <button style={styles.navButton} onClick={handleLogout}>Logout</button>
       </nav>
-
+  
+      {/* Balance and Net Worth Section */}
+      <div style={styles.balanceSection}>
+        <h3>Account Balance: ${userData.balance.toFixed(2)}</h3>
+        <h3>Net Worth: ${userData.networth?.toFixed(2) || calculateNetWorth().toFixed(2)}</h3>
+      </div>
+  
       <div style={styles.mainContent}>
         {/* Trade Section */}
         <div style={styles.tradeSection}>
           <h2>Trade Stocks</h2>
           {errorMessage && <p style={styles.error}>{errorMessage}</p>}
-
+  
           <div style={styles.searchContainer}>
             <input
               type="text"
@@ -380,7 +707,7 @@ const TradePage = () => {
               {loading ? "Searching..." : "Search"}
             </button>
           </div>
-
+  
           {stockPrice !== null && (
             <div style={styles.stockInfo}>
               <h3>{fetchedStockSymbol} {companyName && `- ${companyName}`}</h3>
@@ -410,19 +737,61 @@ const TradePage = () => {
             </div>
           )}
         </div>
-
+  
         {/* Portfolio Section */}
         <div style={styles.portfolioSection}>
           <h2>Portfolio</h2>
           {error && <p style={styles.error}>{error}</p>}
-
+  
           <div style={styles.accountInfo}>
             <h3>Account Details</h3>
             <p><strong>Username:</strong> {userData.username}</p>
             <p><strong>Email:</strong> {userData.email}</p>
-            <p><strong>Account Balance:</strong> ${userData.balance.toFixed(2)}</p>
           </div>
-
+  
+          <div style={styles.passwordResetSection}>
+            <h3>Password Reset</h3>
+            <button 
+              onClick={handleResetPassword} 
+              disabled={loading}
+              style={styles.button}
+            >
+              {resetPasswordMode ? "Processing..." : "Reset Password"}
+            </button>
+            
+            {resetPasswordMode && (
+              <div style={styles.passwordForm}>
+                <input
+                  type="password"
+                  placeholder="New Password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  style={styles.input}
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm Password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  style={styles.input}
+                />
+                {passwordError && <p style={styles.error}>{passwordError}</p>}
+                <div style={styles.passwordButtons}>
+                  <button onClick={cancelPasswordReset} style={styles.button}>
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleResetPassword} 
+                    disabled={loading}
+                    style={styles.button}
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+  
           <div style={styles.leaderboardVisibility}>
             <h3>Leaderboard Visibility</h3>
             <label>
@@ -434,28 +803,17 @@ const TradePage = () => {
               Show my username on leaderboard
             </label>
           </div>
-
-          <div style={styles.stockHoldings}>
-            <h3>Stock Holdings</h3>
-            {userData.stocksInvested?.length > 0 ? (
-              <ul>
-                {userData.stocksInvested.map((stock, index) => (
-                  <li key={index}>
-                    {stock.symbol}: {stock.shares} shares (Spent: ${stock.totalSpent?.toFixed(2) || "0.00"})
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>You don't own any stocks yet.</p>
-            )}
-          </div>
         </div>
       </div>
+      <div style={{ ...styles.tradeSection, marginTop: 30}}>
+            <h2>Stock Holdings</h2>
+            {userData.stocksInvested?.length > 0 ? renderHoldingsTable() : <p>You don't own any stocks yet.</p>}
+      </div>
     </div>
-  );
+  );  
 };
 
-// Hardcoded CSS
+// Updated CSS with new styles
 const styles = {
   container: {
     fontFamily: "Arial, sans-serif",
@@ -469,6 +827,15 @@ const styles = {
     padding: "10px 15px",
     fontSize: "16px",
     cursor: "pointer",
+  },
+  balanceSection: {
+    padding: "15px",
+    marginBottom: "20px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+    backgroundColor: "#f5f5f5",
+    display: "flex",
+    justifyContent: "space-between",
   },
   mainContent: {
     display: "flex",
@@ -507,6 +874,17 @@ const styles = {
   },
   accountInfo: {
     marginBottom: "20px",
+  },
+  passwordResetSection: {
+    marginBottom: "20px",
+  },
+  passwordForm: {
+    marginTop: "10px",
+  },
+  passwordButtons: {
+    marginTop: "10px",
+    display: "flex",
+    gap: "10px",
   },
   leaderboardVisibility: {
     marginBottom: "20px",
@@ -575,6 +953,7 @@ const CreateAccountPage = () => {
         displayable: true,
         createdAt: new Date(),
         lastLogin: new Date(),
+        networth: 1000,
       });
 
       navigate("/login");
@@ -711,6 +1090,7 @@ const Leaderboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [limitAmount, setLimitAmount] = useState(10);
+  const [sortBy, setSortBy] = useState("balance"); // 'balance' or 'networth'
   const location = useLocation();
   const navigate = useNavigate();
   const userData = location.state;
@@ -722,7 +1102,7 @@ const Leaderboard = () => {
     }
     fetchLeaderboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userData, limitAmount]); 
+  }, [userData, limitAmount, sortBy]); 
 
   const fetchLeaderboard = async () => {
     setLoading(true);
@@ -732,7 +1112,7 @@ const Leaderboard = () => {
       const q = query(
         usersRef,
         where("displayable", "==", true),
-        orderBy("balance", "desc"),
+        orderBy(sortBy, "desc"),
         limit(limitAmount)
       );
       const snapshot = await getDocs(q);
@@ -758,91 +1138,238 @@ const Leaderboard = () => {
     setLimitAmount(parseInt(e.target.value));
   };
 
-  const handleUpdateClick = () => {
-    fetchLeaderboard();
+  const handleSortByBalance = () => {
+    setSortBy("balance");
+  };
+
+  const handleSortByNetWorth = () => {
+    setSortBy("networth");
   };
 
   return (
-    <div className="container">
-      <nav>
-        <button onClick={() => navigate("/trade", { state: userData })}>Trade</button>
-        <button onClick={() => navigate("/leaderboard", { state: userData })}>Leaderboard</button>
-        <button onClick={handleLogout}>Logout</button>
+    <div style={styles3.container}>
+      <nav style={styles3.nav}>
+        <button 
+          style={styles3.navButton}
+          onClick={() => navigate("/trade", { state: userData })}
+        >
+          Trade
+        </button>
+        <button 
+          style={styles3.navButton}
+          onClick={() => navigate("/leaderboard", { state: userData })}
+        >
+          Leaderboard
+        </button>
+        <button 
+          style={styles3.navButton}
+          onClick={handleLogout}
+        >
+          Logout
+        </button>
       </nav>
 
-      <h1>Leaderboard</h1>
+      <div style={styles3.mainContent}>
+        {/* Leaderboard Table on Left */}
+        <div style={styles3.leaderboardSection}>
+          <h1>Leaderboard</h1>
+          {loading && <p>Loading leaderboard...</p>}
+          {error && <p style={styles3.error}>{error}</p>}
 
-      {/* Limit selection controls */}
-      <div className="limit-controls" style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "20px" }}>
-        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-          <label>
-            <input
-              type="radio"
-              name="limit"
-              value="10"
-              checked={limitAmount === 10}
-              onChange={handleLimitChange}
-            />
-            10
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="limit"
-              value="25"
-              checked={limitAmount === 25}
-              onChange={handleLimitChange}
-            />
-            25
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="limit"
-              value="50"
-              checked={limitAmount === 50}
-              onChange={handleLimitChange}
-            />
-            50
-          </label>
+          <table style={styles3.table}>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Username</th>
+                <th>{sortBy === "balance" ? "Balance" : "Net Worth"}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topUsers.map((user, index) => (
+                <tr
+                  key={user.id}
+                  style={user.username === userData?.username ? styles3.highlightRow : {}}
+                >
+                  <td>{index + 1}</td>
+                  <td>{user.username}</td>
+                  <td>${user[sortBy]?.toFixed(2) || '0.00'}</td>
+                </tr>
+              ))}
+              {/* If fewer users than limitAmount, show the special row */}
+              {topUsers.length < limitAmount && !loading && (
+                <tr>
+                  <td colSpan="3" style={{ textAlign: "center", fontStyle: "italic" }}>
+                    ----- all users shown -----
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-        <button onClick={handleUpdateClick}>Update</button>
-      </div>
 
-      {loading && <p>Loading leaderboard...</p>}
-      {error && <p className="error">{error}</p>}
-
-      <table>
-        <thead>
-          <tr>
-            <th>Rank</th>
-            <th>Username</th>
-            <th>Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          {topUsers.map((user, index) => (
-            <tr
-              key={user.id}
-              className={user.username === userData?.username ? "highlight" : ""}
+        {/* Controls on Right */}
+        <div style={styles3.controlsSection}>
+          <div style={styles3.controlGroup}>
+            <h3>Leaderboard Controls</h3>
+            <button 
+              style={styles3.button}
+              onClick={fetchLeaderboard}
             >
-              <td>{index + 1}</td>
-              <td>{user.username}</td>
-              <td>${user.balance.toFixed(2)}</td>
-            </tr>
-          ))}
-          {/* If fewer users than limitAmount, show the special row */}
-          {topUsers.length < limitAmount && !loading && (
-            <tr>
-              <td colSpan="3" style={{ textAlign: "center", fontStyle: "italic" }}>
-                ----- all users shown -----
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+              Update Leaderboard
+            </button>
+          </div>
+
+          <div style={styles3.controlGroup}>
+            <h4>Leaderboard Size</h4>
+            <div style={styles3.radioGroup}>
+              <label style={styles3.radioLabel}>
+                <input
+                  type="radio"
+                  name="limit"
+                  value="10"
+                  checked={limitAmount === 10}
+                  onChange={handleLimitChange}
+                  style={styles3.radioInput}
+                />
+                10
+              </label>
+              <label style={styles3.radioLabel}>
+                <input
+                  type="radio"
+                  name="limit"
+                  value="25"
+                  checked={limitAmount === 25}
+                  onChange={handleLimitChange}
+                  style={styles3.radioInput}
+                />
+                25
+              </label>
+              <label style={styles3.radioLabel}>
+                <input
+                  type="radio"
+                  name="limit"
+                  value="50"
+                  checked={limitAmount === 50}
+                  onChange={handleLimitChange}
+                  style={styles3.radioInput}
+                />
+                50
+              </label>
+            </div>
+          </div>
+
+          <div style={styles3.controlGroup}>
+            <h4>Sort By</h4>
+            <button 
+              style={{ 
+                ...styles3.button, 
+                ...(sortBy === "balance" ? styles3.activeButton : {}) 
+              }}
+              onClick={handleSortByBalance}
+            >
+              Balance
+            </button>
+            <button 
+              style={{ 
+                ...styles3.button, 
+                ...(sortBy === "networth" ? styles3.activeButton : {}),
+                marginTop: "10px"
+              }}
+              onClick={handleSortByNetWorth}
+            >
+              Net Worth
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
+};
+
+const styles3 = {
+  container: {
+    fontFamily: "Arial, sans-serif",
+    padding: "20px",
+    maxWidth: "1200px",
+    margin: "0 auto",
+  },
+  nav: {
+    display: "flex",
+    justifyContent: "center",
+    marginBottom: "30px",
+    gap: "10px",
+  },
+  navButton: {
+    padding: "10px 20px",
+    fontSize: "16px",
+    cursor: "pointer",
+    backgroundColor: "#f0f0f0",
+    border: "1px solid #ddd",
+    borderRadius: "4px",
+  },
+  mainContent: {
+    display: "flex",
+    gap: "30px",
+  },
+  leaderboardSection: {
+    flex: 2,
+    padding: "20px",
+    border: "1px solid #ddd",
+    borderRadius: "8px",
+  },
+  controlsSection: {
+    flex: 1,
+    padding: "20px",
+    border: "1px solid #ddd",
+    borderRadius: "8px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "20px",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    marginTop: "20px",
+  },
+  highlightRow: {
+    backgroundColor: "#e6f7ff",
+    fontWeight: "bold",
+  },
+  error: {
+    color: "red",
+    margin: "10px 0",
+  },
+  controlGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
+  button: {
+    padding: "10px 15px",
+    fontSize: "16px",
+    cursor: "pointer",
+    backgroundColor: "#f0f0f0",
+    border: "1px solid #ddd",
+    borderRadius: "4px",
+    width: "100%",
+  },
+  activeButton: {
+    backgroundColor: "#4CAF50",
+    color: "white",
+  },
+  radioGroup: {
+    display: "flex",
+    gap: "15px",
+    justifyContent: "center",
+  },
+  radioLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: "5px",
+  },
+  radioInput: {
+    margin: "0",
+  },
 };
 
 export default App;
