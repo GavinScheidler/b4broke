@@ -206,6 +206,7 @@ const TradePage = () => {
   const API_KEY = "d09drcpr01qnv9ciacngd09drcpr01qnv9ciaco0";
   const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
   const ALT_API_KEY = "d09dfmpr01qnv9ci86fgd09dfmpr01qnv9ci86g0";
+  const location = useLocation();
 
   const [companyName, setCompanyName] = useState("");
   const [stockQuantity, setStockQuantity] = useState(1);
@@ -235,7 +236,6 @@ const TradePage = () => {
 
   const [error, setError] = useState("");
 
-  const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -798,7 +798,7 @@ const TradePage = () => {
 const styles = {
   container: {
     fontFamily: "Arial, sans-serif",
-    padding: "10px",
+    padding: "100px",
   },
   nav: {
     marginBottom: "20px",
@@ -1284,7 +1284,7 @@ const styles3 = {
     padding: "10px 20px",
     fontSize: "16px",
     cursor: "pointer",
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#007BFF",
     border: "1px solid #ddd",
     borderRadius: "4px",
   },
@@ -1329,7 +1329,7 @@ const styles3 = {
     padding: "10px 15px",
     fontSize: "16px",
     cursor: "pointer",
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#007BFF",
     border: "1px solid #ddd",
     borderRadius: "4px",
     width: "100%",
