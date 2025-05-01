@@ -272,8 +272,9 @@ const TradePage = () => {
         return total + (currentPrice * stock.shares);
       }, 0);
     }
-    
-    return userData.balance + stockValue;
+    const networth = userData.balance + stockValue;
+    updateUserData({networth}); // the {networth} too about an hour to figure out. 
+    return networth;
   };
 
   const searchStock = async () => {
@@ -1104,7 +1105,6 @@ const Leaderboard = () => {
       setTopUsers(users);
     } catch (err) {
       console.error("Leaderboard error:", err);
-      setError("Failed to load leaderboard.");
     } finally {
       setLoading(false);
     }
