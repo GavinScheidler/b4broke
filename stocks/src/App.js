@@ -205,8 +205,7 @@ const styles2 = {
 const TradePage = () => {
   const API_KEY = "d09drcpr01qnv9ciacngd09drcpr01qnv9ciaco0";
   const STOCK_API_URL = "https://finnhub.io/api/v1/quote?symbol=";
-  const ALT_API_KEY = "d09dnh9r01qnv9ci9lhgd09dnh9r01qnv9ci9li0";
-  //const ALT_API_KEY = "d09dfmpr01qnv9ci86fgd09dfmpr01qnv9ci86g0";
+  const ALT_API_KEY = "d09dfmpr01qnv9ci86fgd09dfmpr01qnv9ci86g0";
 
   const [companyName, setCompanyName] = useState("");
   const [stockQuantity, setStockQuantity] = useState(1);
@@ -215,7 +214,17 @@ const TradePage = () => {
   const [stockPrice, setStockPrice] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [stockHoldings, setStockHoldings] = useState(0);
-  const [userData, setUserData] = useState(null);
+  const [userData, setUserData] = useState(() => {
+    const initialState = location.state || {
+      username: '',
+      email: '',
+      balance: 0,
+      stocksInvested: [],
+      userId: '',
+      displayable: false
+    };
+    return initialState;
+  });
   const [loading, setLoading] = useState(false);
   const [livePrices, setLivePrices] = useState({});
   const [confirmingSellAll, setConfirmingSellAll] = useState(null);
@@ -248,15 +257,12 @@ const TradePage = () => {
       }));
   
       setLivePrices(priceMap);
-      
-      // Recalculate net worth when prices update
-      calculateNetWorth();
     };
   
     fetchAllPrices();
   }, [userData]);
 
-  const calculateNetWorth = async () => {
+  const calculateNetWorth = () => {
     if (!userData) return 0;
     
     let stockValue = 0;
@@ -267,18 +273,7 @@ const TradePage = () => {
       }, 0);
     }
     
-    const netWorth = userData.balance + stockValue;
-    
-    // Save to database
-    try {
-      await updateDoc(doc(db, "Users", userData.userId), {
-        networth: netWorth
-      });
-    } catch (err) {
-      console.error("Error saving net worth:", err);
-    }
-    
-    return netWorth;
+    return userData.balance + stockValue;
   };
 
   const searchStock = async () => {
@@ -290,7 +285,9 @@ const TradePage = () => {
     setErrorMessage("");
 
     try {
-      const searchResponse = await fetch("https://finnhub.io/api/v1/search?q=${stockSymbol}&token=${API_KEY}");
+      const searchResponse = await fetch(
+        `https://finnhub.io/api/v1/search?q=${stockSymbol}&token=${API_KEY}`
+      );
       const searchData = await searchResponse.json();
 
       if (!searchData.result?.length) {
@@ -303,7 +300,7 @@ const TradePage = () => {
       const name = bestMatch.description;
 
       const quoteResponse = await fetch(
-        "${STOCK_API_URL}${symbol}&token=${API_KEY}"
+        `${STOCK_API_URL}${symbol}&token=${API_KEY}`
       );
       const quoteData = await quoteResponse.json();
 
@@ -512,24 +509,8 @@ const TradePage = () => {
   };
 
   const updateUserData = async (updates) => {
-    // Calculate new net worth
-    const stockValue = updates.stocksInvested?.reduce((total, stock) => {
-      const currentPrice = livePrices[stock.symbol] || 0;
-      return total + (currentPrice * stock.shares);
-    }, 0) || 
-    userData.stocksInvested?.reduce((total, stock) => {
-      const currentPrice = livePrices[stock.symbol] || 0;
-      return total + (currentPrice * stock.shares);
-    }, 0) || 0;
-  
-    const newBalance = updates.balance !== undefined ? updates.balance : userData.balance;
-    const networth = newBalance + stockValue;
-  
-    await updateDoc(doc(db, "Users", userData.userId), {
-      ...updates,
-      networth
-    });
-    setUserData(prev => ({ ...prev, ...updates, networth }));
+    await updateDoc(doc(db, "Users", userData.userId), updates);
+    setUserData(prev => ({ ...prev, ...updates }));
   };
 
   const handleLogout = async () => {
@@ -685,7 +666,7 @@ const TradePage = () => {
       {/* Balance and Net Worth Section */}
       <div style={styles.balanceSection}>
         <h3>Account Balance: ${userData.balance.toFixed(2)}</h3>
-        <h3>Net Worth: ${userData.networth?.toFixed(2) || calculateNetWorth().toFixed(2)}</h3>
+        <h3>Net Worth: ${calculateNetWorth().toFixed(2)}</h3>
       </div>
   
       <div style={styles.mainContent}>
